@@ -1,8 +1,10 @@
 import React, { useState, useMemo } from 'react';
-import { mockCompanies } from '../data/mockCompanies';
 import { riskEngine } from '../services/riskEngine';
+import { historicalPriceService } from '../services/historicalPriceService';
 import { ChangeIndicator, MiniSparkline, ScoreBar, SectionHeader, TabBar, Disclaimer } from '../components/SharedComponents';
-import { Company } from '../models/types';
+import { Company, Timeframe, PricePoint } from '../models/types';
+import { LineChart, Line, XAxis, YAxis, ResponsiveContainer, Tooltip, CartesianGrid, Area, AreaChart } from 'recharts';
+import { useMarketData } from '../components/MarketDataContext';
 
 const rankTabs = [
   { id: 'overall', label: 'Top Ranked' },
@@ -12,13 +14,36 @@ const rankTabs = [
   { id: 'risk', label: 'Lowest Risk' },
 ];
 
-function CompanyDetail({ company, onClose }: { company: Company; onClose: () => void }) {
+export function CompanyDetail({ company, onClose }: { company: Company; onClose: () => void }) {
   const risk = riskEngine.assessCompanyRisk(company);
+  const { fetchHistory } = useMarketData();
+  const [timeframe, setTimeframe] = useState<Timeframe>('1M');
+  const [liveData, setLiveData] = useState<PricePoint[]>([]);
+  const [loading, setLoading] = useState(false);
+  const fallbackData = useMemo(() => historicalPriceService.getHistory(company.ticker, timeframe, company.price, company.changePercent), [company.ticker, timeframe, company.price, company.changePercent]);
+  const priceData = liveData.length > 0 ? liveData : fallbackData;
+
+  React.useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setLiveData([]);
+    fetchHistory(company.ticker, timeframe)
+      .then(data => { if (!cancelled && data.length) setLiveData(data); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [timeframe, fetchHistory, company.ticker]);
+  const timeframes: { id: Timeframe; label: string }[] = [
+    { id: '1D', label: '1D' }, { id: '1W', label: '1W' }, { id: '1M', label: '1M' },
+    { id: '6M', label: '6M' }, { id: '1Y', label: '1Y' }, { id: '5Y', label: '5Y' },
+  ];
+  const priceChange = priceData.length >= 2 ? priceData[priceData.length - 1].value - priceData[0].value : 0;
+  const priceChangePercent = priceData.length >= 2 ? (priceChange / priceData[0].value) * 100 : 0;
+  const chartColor = priceChange >= 0 ? '#10b981' : '#ef4444';
 
   return (
     <div className="fixed inset-0 z-50 bg-surface-950/95 overflow-y-auto">
-      <div className="max-w-lg mx-auto p-4 pb-24">
-        <button onClick={onClose} className="text-gray-400 hover:text-white mb-4 text-sm">← Back</button>
+      <div className="max-w-lg mx-auto p-4 pt-[env(safe-area-inset-top,16px)] pb-24">
+        <button onClick={onClose} className="text-gray-400 hover:text-white mb-4 text-sm mt-2">← Back</button>
 
         <div className="flex items-center gap-3 mb-4">
           <div className="w-12 h-12 rounded-2xl bg-accent-500/20 flex items-center justify-center text-lg font-bold text-accent-400">
@@ -29,8 +54,60 @@ function CompanyDetail({ company, onClose }: { company: Company; onClose: () => 
             <p className="text-xs text-gray-500">{company.name}</p>
           </div>
           <div className="ml-auto text-right">
-            <p className="text-lg font-bold">${company.price}</p>
-            <ChangeIndicator value={company.changePercent} />
+            <p className="text-lg font-bold">${company.price.toFixed(2)}</p>
+            <ChangeIndicator value={priceChangePercent} />
+          </div>
+        </div>
+
+        {/* Price Chart */}
+        <div className="card p-4 mb-4">
+          <div className="flex items-center justify-between mb-2">
+            <div>
+              <span className={`text-sm font-semibold ${priceChange >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                {priceChange >= 0 ? '+' : ''}{priceChange.toFixed(2)} ({priceChangePercent >= 0 ? '+' : ''}{priceChangePercent.toFixed(2)}%)
+              </span>
+              <span className="text-[10px] text-gray-500 ml-2">{timeframe}</span>
+            </div>
+          </div>
+          <div className="flex gap-1 mb-3">
+            {timeframes.map(tf => (
+              <button
+                key={tf.id}
+                onClick={() => setTimeframe(tf.id)}
+                className={`flex-1 py-1.5 rounded-lg text-[11px] font-medium transition-all ${
+                  timeframe === tf.id
+                    ? 'bg-accent-500/20 text-accent-400 border border-accent-500/30'
+                    : 'bg-white/5 text-gray-500 hover:text-gray-300'
+                }`}
+              >
+                {tf.label}
+              </button>
+            ))}
+          </div>
+          <div className="h-44 relative">
+            {loading && (
+              <div className="absolute inset-0 flex items-center justify-center z-10 bg-surface-900/50 rounded-lg">
+                <div className="w-5 h-5 border-2 border-accent-500 border-t-transparent rounded-full animate-spin" />
+              </div>
+            )}
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={priceData} margin={{ top: 5, right: 5, bottom: 5, left: 5 }}>
+                <defs>
+                  <linearGradient id={`grad-${company.ticker}`} x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor={chartColor} stopOpacity={0.3} />
+                    <stop offset="100%" stopColor={chartColor} stopOpacity={0} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
+                <XAxis dataKey="date" tick={{ fontSize: 9, fill: '#6b7280' }} interval="preserveStartEnd" />
+                <YAxis tick={{ fontSize: 9, fill: '#6b7280' }} domain={['auto', 'auto']} tickFormatter={v => `$${v}`} />
+                <Tooltip
+                  contentStyle={{ background: '#131c2e', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 12, fontSize: 12 }}
+                  formatter={(v: number) => [`$${v.toFixed(2)}`, 'Price']}
+                />
+                <Area type="monotone" dataKey="value" stroke={chartColor} strokeWidth={2} fill={`url(#grad-${company.ticker})`} />
+              </AreaChart>
+            </ResponsiveContainer>
           </div>
         </div>
 
@@ -105,12 +182,26 @@ function CompanyDetail({ company, onClose }: { company: Company; onClose: () => 
           </div>
           <div className="space-y-2">
             <div>
-              <p className="text-[10px] text-gray-500 uppercase mb-1">Upside Drivers</p>
-              {risk.upsideDrivers.map((d, i) => <p key={i} className="text-xs text-emerald-400/80">✓ {d}</p>)}
+              <p className="text-[10px] text-gray-500 uppercase mb-2">Upside Drivers</p>
+              <div className="space-y-2">
+                {risk.upsideDrivers.map((d, i) => (
+                  <div key={i} className="bg-emerald-500/5 border border-emerald-500/10 rounded-lg p-2.5">
+                    <p className="text-xs font-medium text-emerald-400">✓ {d.label}</p>
+                    <p className="text-[11px] text-gray-400 mt-0.5 leading-relaxed">{d.explanation}</p>
+                  </div>
+                ))}
+              </div>
             </div>
             <div>
-              <p className="text-[10px] text-gray-500 uppercase mb-1">Downside Risks</p>
-              {risk.downsideRisks.map((d, i) => <p key={i} className="text-xs text-red-400/80">✗ {d}</p>)}
+              <p className="text-[10px] text-gray-500 uppercase mb-2 mt-3">Downside Risks</p>
+              <div className="space-y-2">
+                {risk.downsideRisks.map((d, i) => (
+                  <div key={i} className="bg-red-500/5 border border-red-500/10 rounded-lg p-2.5">
+                    <p className="text-xs font-medium text-red-400">✗ {d.label}</p>
+                    <p className="text-[11px] text-gray-400 mt-0.5 leading-relaxed">{d.explanation}</p>
+                  </div>
+                ))}
+              </div>
             </div>
             <div>
               <p className="text-[10px] text-gray-500 uppercase mb-1">Invalidation</p>
@@ -132,12 +223,13 @@ function CompanyDetail({ company, onClose }: { company: Company; onClose: () => 
 }
 
 export default function StocksPage() {
+  const { companies } = useMarketData();
   const [search, setSearch] = useState('');
   const [rankBy, setRankBy] = useState('overall');
   const [selected, setSelected] = useState<Company | null>(null);
 
   const filtered = useMemo(() => {
-    let list = mockCompanies;
+    let list = companies;
     if (search) {
       const q = search.toLowerCase();
       list = list.filter(c => c.ticker.toLowerCase().includes(q) || c.name.toLowerCase().includes(q) || c.sector.toLowerCase().includes(q));
@@ -184,7 +276,7 @@ export default function StocksPage() {
                 <span className="text-xs text-gray-500 truncate">{c.name}</span>
               </div>
               <div className="flex items-center gap-2 mt-0.5">
-                <span className="text-xs text-gray-400">{c.sector}</span>
+                <span className="text-xs font-mono text-white">${c.price.toFixed(2)}</span>
                 <span className="text-xs text-gray-600">•</span>
                 <span className="text-xs text-gray-400">{c.marketCapLabel}</span>
                 <span className="text-xs text-gray-600">•</span>

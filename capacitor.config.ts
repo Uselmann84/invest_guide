@@ -13,6 +13,9 @@ const config: CapacitorConfig = {
     iosScheme: 'investguide',
   },
   plugins: {
+    CapacitorHttp: {
+      enabled: true,
+    },
     SplashScreen: {
       launchShowDuration: 1200,
       backgroundColor: '#060a14',

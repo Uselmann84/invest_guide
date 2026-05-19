@@ -176,6 +176,30 @@ export interface UserPreferences {
   currency: string;
   startingCapital: number;
   scoreWeights: ScoreWeights;
+  // Live mode + API configuration
+  liveMode: boolean;
+  openaiApiKey: string;
+  openaiModel: string;
+  refreshIntervalSeconds: number; // 0 = manual only
+  autoRefresh: boolean;
+}
+
+// ---- Pricing / Historical ----
+export type Timeframe = '1D' | '1W' | '1M' | '6M' | '1Y' | '5Y' | 'ALL';
+
+export interface PricePoint {
+  date: string; // ISO or label depending on timeframe
+  value: number;
+}
+
+// ---- Simulator scenario tuning ----
+export interface ScenarioParams {
+  expectedAnnualReturn: number; // %
+  volatility: number;           // %
+  interestRateShock: number;    // basis points
+  inflationShock: number;       // %
+  techMultiplier: number;       // 0.5 .. 2.0
+  durationMonths: number;       // 1 .. 60
 }
 
 export interface ScoreWeights {
@@ -206,8 +230,8 @@ export interface RiskAssessment {
   ticker: string;
   overallRisk: number;
   factors: RiskFactor[];
-  upsideDrivers: string[];
-  downsideRisks: string[];
+  upsideDrivers: { label: string; explanation: string }[];
+  downsideRisks: { label: string; explanation: string }[];
   invalidation: string;
   watchItems: string[];
 }
@@ -219,5 +243,40 @@ export interface RiskFactor {
   description: string;
 }
 
+// ---- My Portfolio ----
+export interface StockHolding {
+  id: string;
+  ticker: string;
+  name: string;
+  shares: number;
+  buyPrice: number;
+  buyDate: string; // ISO date
+}
+
+export interface RsuGrant {
+  id: string;
+  ticker: string;
+  name: string;
+  totalShares: number;
+  grantDate: string; // ISO date
+  grantPrice: number;
+  vestingYears: number;
+  vestingFrequencyMonths: 3 | 6; // vest every 3 or 6 months
+  cliffPeriods: number; // how many periods before first vest (e.g. 4 = wait 4 periods, then vest all at once)
+}
+
+export interface VestedRsuEvent {
+  date: string;
+  shares: number;
+  cumulative: number;
+  isCliff: boolean;
+}
+
+export interface TaxSettings {
+  capitalGainsTaxRate: number; // % for long-term
+  shortTermCapGainsTaxRate: number; // % for short-term (<1yr)
+  incomeTaxRate: number; // % for RSU income
+}
+
 // ---- Navigation ----
-export type TabId = 'home' | 'trends' | 'stocks' | 'institutions' | 'simulator' | 'agent' | 'settings';
+export type TabId = 'home' | 'trends' | 'stocks' | 'institutions' | 'portfolio' | 'simulator' | 'agent' | 'settings';

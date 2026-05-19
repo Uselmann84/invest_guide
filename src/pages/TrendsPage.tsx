@@ -1,7 +1,9 @@
 import React, { useState } from 'react';
 import { mockTrends } from '../data/mockTrends';
 import { ScoreBar, SectionHeader, TabBar } from '../components/SharedComponents';
-import { TechTrend } from '../models/types';
+import { TechTrend, Company } from '../models/types';
+import { useMarketData } from '../components/MarketDataContext';
+import { CompanyDetail } from './StocksPage';
 
 const sortOptions = [
   { id: 'momentum', label: 'Momentum' },
@@ -11,7 +13,7 @@ const sortOptions = [
   { id: 'hype', label: 'Hype' },
 ];
 
-function TrendCard({ trend, expanded, onToggle }: { trend: TechTrend; expanded: boolean; onToggle: () => void }) {
+function TrendCard({ trend, expanded, onToggle, onCompanyClick }: { trend: TechTrend; expanded: boolean; onToggle: () => void; onCompanyClick: (ticker: string) => void }) {
   return (
     <div className="card overflow-hidden">
       <button onClick={onToggle} className="w-full p-4 text-left">
@@ -54,7 +56,7 @@ function TrendCard({ trend, expanded, onToggle }: { trend: TechTrend; expanded: 
             <p className="text-[10px] text-gray-500 uppercase tracking-wider mb-1">Key Companies</p>
             <div className="flex flex-wrap gap-1.5">
               {trend.keyCompanies.map(t => (
-                <span key={t} className="badge-blue">{t}</span>
+                <button key={t} className="badge-blue active:scale-95 transition-transform" onClick={(e) => { e.stopPropagation(); onCompanyClick(t); }}>{t}</button>
               ))}
             </div>
           </div>
@@ -62,7 +64,7 @@ function TrendCard({ trend, expanded, onToggle }: { trend: TechTrend; expanded: 
             <p className="text-[10px] text-gray-500 uppercase tracking-wider mb-1">Emerging Players</p>
             <div className="flex flex-wrap gap-1.5">
               {trend.emergingCompanies.map(t => (
-                <span key={t} className="badge-orange">{t}</span>
+                <button key={t} className="badge-orange active:scale-95 transition-transform" onClick={(e) => { e.stopPropagation(); onCompanyClick(t); }}>{t}</button>
               ))}
             </div>
           </div>
@@ -89,8 +91,15 @@ function TrendCard({ trend, expanded, onToggle }: { trend: TechTrend; expanded: 
 }
 
 export default function TrendsPage() {
+  const { companies } = useMarketData();
   const [sortBy, setSortBy] = useState('momentum');
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [selectedCompany, setSelectedCompany] = useState<Company | null>(null);
+
+  const handleCompanyClick = (ticker: string) => {
+    const company = companies.find(c => c.ticker === ticker);
+    if (company) setSelectedCompany(company);
+  };
 
   const sorted = [...mockTrends].sort((a, b) => {
     switch (sortBy) {
@@ -101,6 +110,8 @@ export default function TrendsPage() {
       default: return b.momentumScore - a.momentumScore;
     }
   });
+
+  if (selectedCompany) return <CompanyDetail company={selectedCompany} onClose={() => setSelectedCompany(null)} />;
 
   return (
     <div className="space-y-4">
@@ -136,6 +147,7 @@ export default function TrendsPage() {
             trend={trend}
             expanded={expandedId === trend.id}
             onToggle={() => setExpandedId(expandedId === trend.id ? null : trend.id)}
+            onCompanyClick={handleCompanyClick}
           />
         ))}
       </div>

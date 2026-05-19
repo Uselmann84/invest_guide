@@ -9,13 +9,15 @@
     "preview": "vite preview",
     "ios:sync": "npm run build && cap sync ios",
     "ios:open": "npm run build && cap sync ios && cap open ios",
-    "ios:run": "npm run build && cap run ios"
+    "ios:run": "npm run build && cap run ios",
+    "ios:deploy": "npm run build && cap sync ios && xcodebuild -project ios/App/App.xcodeproj -scheme App -configuration Debug -destination 'id=00008150-000978801A69401C' -derivedDataPath build/ios DEVELOPMENT_TEAM=54Q357C2BU CODE_SIGN_STYLE=Automatic -allowProvisioningUpdates build && xcrun devicectl device install app --device 00008150-000978801A69401C build/ios/Build/Products/Debug-iphoneos/App.app && xcrun devicectl device process launch --device 00008150-000978801A69401C com.investguide.app"
   },
   "dependencies": {
     "@capacitor/cli": "^8.3.4",
     "@capacitor/core": "^8.3.4",
     "@capacitor/haptics": "^8.0.2",
     "@capacitor/ios": "^8.3.4",
+    "@capacitor/preferences": "^8.0.1",
     "@capacitor/splash-screen": "^8.0.1",
     "@capacitor/status-bar": "^8.0.2",
     "lucide-react": "^0.460.0",

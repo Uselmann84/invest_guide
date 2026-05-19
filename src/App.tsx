@@ -7,12 +7,17 @@ import InstitutionsPage from './pages/InstitutionsPage';
 import SimulatorPage from './pages/SimulatorPage';
 import AgentPage from './pages/AgentPage';
 import SettingsPage from './pages/SettingsPage';
+import PortfolioPage from './pages/PortfolioPage';
+import { RefreshProvider, useRefresh } from './components/RefreshContext';
+import { MarketDataProvider } from './components/MarketDataContext';
+import { userPreferenceService } from './services/userPreferenceService';
 
 const tabs: { id: TabId; label: string; icon: string }[] = [
   { id: 'home', label: 'Home', icon: '⌂' },
   { id: 'trends', label: 'Trends', icon: '◎' },
   { id: 'stocks', label: 'Stocks', icon: '◈' },
   { id: 'institutions', label: 'Inst.', icon: '◉' },
+  { id: 'portfolio', label: 'Portfolio', icon: '◫' },
   { id: 'simulator', label: 'Sim', icon: '◧' },
   { id: 'agent', label: 'Agent', icon: '◬' },
   { id: 'settings', label: 'Settings', icon: '⚙' },
@@ -48,6 +53,11 @@ function NavIcon({ id, active }: { id: TabId; active: boolean }) {
     agent: (
       <svg viewBox="0 0 24 24" fill="none" className="w-5 h-5" stroke="currentColor" strokeWidth={active ? 2.5 : 1.5}>
         <path d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    ),
+    portfolio: (
+      <svg viewBox="0 0 24 24" fill="none" className="w-5 h-5" stroke="currentColor" strokeWidth={active ? 2.5 : 1.5}>
+        <path d="M3 10h18M3 6h18M3 14h10m-10 4h6m5-8v10a1 1 0 01-1 1H5a1 1 0 01-1-1V4a1 1 0 011-1h14a1 1 0 011 1v2" strokeLinecap="round" strokeLinejoin="round" />
       </svg>
     ),
     settings: (
@@ -116,15 +126,67 @@ export default function App() {
     trends: <TrendsPage />,
     stocks: <StocksPage />,
     institutions: <InstitutionsPage />,
+    portfolio: <PortfolioPage />,
     simulator: <SimulatorPage />,
     agent: <AgentPage />,
     settings: <SettingsPage />,
   };
 
   return (
+    <RefreshProvider>
+      <MarketDataProvider>
+        <AppContent activeTab={activeTab} setActiveTab={setActiveTab} pages={pages} />
+      </MarketDataProvider>
+    </RefreshProvider>
+  );
+}
+
+function AppContent({ activeTab, setActiveTab, pages }: {
+  activeTab: TabId;
+  setActiveTab: (t: TabId) => void;
+  pages: Record<TabId, JSX.Element>;
+}) {
+  const { lastRefresh, isRefreshing, triggerRefresh } = useRefresh();
+  const prefs = userPreferenceService.getPreferences();
+
+  return (
     <div className="min-h-screen bg-surface-950 text-white">
       {/* Status bar spacer */}
       <div className="h-[env(safe-area-inset-top,0px)]" />
+
+      {/* Top header bar */}
+      <header className="sticky top-0 z-30 bg-surface-950/90 backdrop-blur-xl border-b border-white/5">
+        <div className="max-w-lg mx-auto flex items-center justify-between px-4 py-2">
+          <div className="flex items-center gap-2">
+            <span className="text-lg font-bold text-accent-400">InvestGuide</span>
+            {prefs.liveMode && prefs.openaiApiKey && (
+              <span className="px-1.5 py-0.5 rounded-md bg-emerald-500/20 text-emerald-400 text-[9px] font-semibold uppercase tracking-wider">Live</span>
+            )}
+          </div>
+          <div className="flex items-center gap-3">
+            {prefs.autoRefresh && (
+              <span className="text-[9px] text-gray-500">
+                {prefs.refreshIntervalSeconds}s
+              </span>
+            )}
+            <span className="text-[9px] text-gray-600">
+              {new Date(lastRefresh).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+            </span>
+            <button
+              onClick={triggerRefresh}
+              disabled={isRefreshing}
+              className={`w-8 h-8 rounded-full flex items-center justify-center transition-all ${
+                isRefreshing ? 'bg-accent-500/20 animate-spin' : 'bg-white/5 hover:bg-white/10 active:bg-accent-500/20'
+              }`}
+              aria-label="Refresh data"
+            >
+              <svg viewBox="0 0 24 24" fill="none" className="w-4 h-4" stroke="currentColor" strokeWidth={2}>
+                <path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </button>
+          </div>
+        </div>
+      </header>
 
       {/* Main content */}
       <main className="px-4 pt-2 pb-24 max-w-lg mx-auto">

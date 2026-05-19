@@ -29,13 +29,21 @@ const DEFAULT_PREFERENCES: UserPreferences = {
     shortTermPerformance: 10,
     longTermPotential: 10,
   },
+  liveMode: false,
+  openaiApiKey: '',
+  openaiModel: 'gpt-4o-mini',
+  refreshIntervalSeconds: 60,
+  autoRefresh: false,
 };
 
 export const userPreferenceService = {
   getPreferences(): UserPreferences {
     try {
       const stored = localStorage.getItem(STORAGE_KEY);
-      if (stored) return JSON.parse(stored);
+      if (stored) {
+        // Merge with defaults so new fields are present on existing installs
+        return { ...DEFAULT_PREFERENCES, ...JSON.parse(stored) };
+      }
     } catch { /* use defaults */ }
     return { ...DEFAULT_PREFERENCES };
   },

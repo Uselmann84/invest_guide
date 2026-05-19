@@ -1,20 +1,210 @@
-import React, { useState } from 'react';
-import { mockIndexes, mockSectors, mockSentiment, mockMacroRisk, mockMarketSummary, mockHeatmapData } from '../data/mockMarketData';
-import { mockCompanies } from '../data/mockCompanies';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import { useMarketData } from '../components/MarketDataContext';
+import { IndexData, Company, Timeframe, PricePoint } from '../models/types';
 import { ChangeIndicator, MiniSparkline, SentimentGauge, SectionHeader, Disclaimer, TabBar } from '../components/SharedComponents';
-import { LineChart, Line, XAxis, YAxis, ResponsiveContainer, Tooltip, AreaChart, Area } from 'recharts';
+import { historicalPriceService } from '../services/historicalPriceService';
+import { CompanyDetail } from './StocksPage';
+import { LineChart, Line, XAxis, YAxis, ResponsiveContainer, Tooltip, AreaChart, Area, CartesianGrid } from 'recharts';
 
 const perfTabs = [
-  { id: 'daily', label: '1D' }, { id: 'weekly', label: '1W' }, { id: 'monthly', label: '1M' },
-  { id: 'sixMonth', label: '6M' }, { id: 'yearly', label: '1Y' }, { id: 'fiveYear', label: '5Y' },
+  { id: '1D', label: '1D' }, { id: '1W', label: '1W' }, { id: '1M', label: '1M' },
+  { id: '6M', label: '6M' }, { id: '1Y', label: '1Y' }, { id: '5Y', label: '5Y' },
 ];
 
-export default function DashboardPage() {
-  const [perfPeriod, setPerfPeriod] = useState('daily');
+const perfKeyMap: Record<string, string> = {
+  '1D': 'daily', '1W': 'weekly', '1M': 'monthly',
+  '6M': 'sixMonth', '1Y': 'yearly', '5Y': 'fiveYear',
+};
 
-  const topGainers = [...mockSectors].sort((a, b) => b.change - a.change).slice(0, 3);
-  const topDecliners = [...mockSectors].sort((a, b) => a.change - b.change).slice(0, 3);
-  const topStocks = [...mockCompanies].sort((a, b) => b.scores.overall - a.scores.overall).slice(0, 5);
+const timeframes: { id: Timeframe; label: string }[] = [
+  { id: '1D', label: '1D' }, { id: '1W', label: '1W' }, { id: '1M', label: '1M' },
+  { id: '6M', label: '6M' }, { id: '1Y', label: '1Y' }, { id: '5Y', label: '5Y' },
+];
+
+function IndexDetail({ index, onClose }: { index: IndexData; onClose: () => void }) {
+  const { fetchIndexHistory } = useMarketData();
+  const [timeframe, setTimeframe] = useState<Timeframe>('1M');
+  const [priceData, setPriceData] = useState<PricePoint[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  // Generate chart data from sparkline or fetch from Yahoo Finance
+  const chartData = useMemo(() => {
+    if (priceData.length > 0) return priceData;
+    // Fallback: generate from sparkline
+    return index.sparkline.map((v, i) => ({
+      date: `${i + 1}`,
+      value: v,
+    }));
+  }, [priceData, index.sparkline]);
+
+  // Fetch real chart data when timeframe changes
+  React.useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    fetchIndexHistory(index.symbol, timeframe)
+      .then(data => { if (!cancelled && data.length) setPriceData(data); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [timeframe, fetchIndexHistory, index.symbol]);
+
+  const perf = index.performance;
+  const tfPerf: Record<Timeframe, number> = {
+    '1D': perf.daily, '1W': perf.weekly, '1M': perf.monthly,
+    '6M': perf.sixMonth, '1Y': perf.yearly, '5Y': perf.fiveYear, 'ALL': perf.fiveYear,
+  };
+  const currentPerf = tfPerf[timeframe];
+  const chartColor = currentPerf >= 0 ? '#10b981' : '#ef4444';
+
+  return (
+    <div className="fixed inset-0 z-50 bg-surface-950/95 overflow-y-auto">
+      <div className="max-w-lg mx-auto p-4 pt-[env(safe-area-inset-top,16px)] pb-24">
+        <button onClick={onClose} className="text-gray-400 hover:text-white mb-4 text-sm mt-2">← Back</button>
+
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h2 className="text-xl font-bold">{index.name}</h2>
+            <p className="text-xs text-gray-500">{index.symbol}</p>
+          </div>
+          <div className="text-right">
+            <p className="text-xl font-bold">{index.value.toLocaleString(undefined, { maximumFractionDigits: 2 })}</p>
+            <ChangeIndicator value={index.changePercent} />
+          </div>
+        </div>
+
+        {/* Chart */}
+        <div className="card p-4 mb-4">
+          <div className="flex items-center justify-between mb-2">
+            <span className={`text-sm font-semibold ${currentPerf >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+              {currentPerf >= 0 ? '+' : ''}{currentPerf.toFixed(2)}%
+            </span>
+            <span className="text-[10px] text-gray-500">{timeframe}</span>
+          </div>
+          <div className="flex gap-1 mb-3">
+            {timeframes.map(tf => (
+              <button
+                key={tf.id}
+                onClick={() => setTimeframe(tf.id)}
+                className={`flex-1 py-1.5 rounded-lg text-[11px] font-medium transition-all ${
+                  timeframe === tf.id
+                    ? 'bg-accent-500/20 text-accent-400 border border-accent-500/30'
+                    : 'bg-white/5 text-gray-500 hover:text-gray-300'
+                }`}
+              >
+                {tf.label}
+              </button>
+            ))}
+          </div>
+          <div className="h-56 relative">
+            {loading && (
+              <div className="absolute inset-0 flex items-center justify-center z-10 bg-surface-900/50 rounded-lg">
+                <div className="w-5 h-5 border-2 border-accent-500 border-t-transparent rounded-full animate-spin" />
+              </div>
+            )}
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={chartData} margin={{ top: 5, right: 5, bottom: 5, left: 5 }}>
+                <defs>
+                  <linearGradient id={`grad-idx-${index.symbol}`} x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor={chartColor} stopOpacity={0.3} />
+                    <stop offset="100%" stopColor={chartColor} stopOpacity={0} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
+                <XAxis dataKey="date" tick={{ fontSize: 9, fill: '#6b7280' }} interval="preserveStartEnd" />
+                <YAxis tick={{ fontSize: 9, fill: '#6b7280' }} domain={['auto', 'auto']} tickFormatter={v => v.toLocaleString()} />
+                <Tooltip
+                  contentStyle={{ background: '#131c2e', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 12, fontSize: 12 }}
+                  formatter={(v: number) => [v.toLocaleString(undefined, { maximumFractionDigits: 2 }), index.name]}
+                />
+                <Area type="monotone" dataKey="value" stroke={chartColor} strokeWidth={2} fill={`url(#grad-idx-${index.symbol})`} />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        {/* Performance Grid */}
+        <div className="grid grid-cols-3 gap-2 mb-4">
+          {([['1D', perf.daily], ['1W', perf.weekly], ['1M', perf.monthly],
+             ['6M', perf.sixMonth], ['1Y', perf.yearly], ['5Y', perf.fiveYear]] as [string, number][]).map(([label, val]) => (
+            <div key={label} className="card-compact p-3 text-center">
+              <p className="text-[10px] text-gray-500">{label}</p>
+              <p className={`text-sm font-semibold ${val >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                {val >= 0 ? '+' : ''}{val.toFixed(2)}%
+              </p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default function DashboardPage() {
+  const { indexes, companies, sectors, sentiment, macroRisk, summary, heatmap, isLive, isLoading, dataSource, fetchIndexHistory, fetchHistory } = useMarketData();
+  const [perfPeriod, setPerfPeriod] = useState<Timeframe>(() => (localStorage.getItem('dash_indexPeriod') as Timeframe) || '1M');
+  const [stockPeriod, setStockPeriod] = useState<Timeframe>(() => (localStorage.getItem('dash_stockPeriod') as Timeframe) || '1M');
+  const [selectedIndex, setSelectedIndex] = useState<IndexData | null>(null);
+
+  const handleSetPerfPeriod = (t: Timeframe) => { setPerfPeriod(t); localStorage.setItem('dash_indexPeriod', t); };
+  const handleSetStockPeriod = (t: Timeframe) => { setStockPeriod(t); localStorage.setItem('dash_stockPeriod', t); };
+  const [selectedStock, setSelectedStock] = useState<Company | null>(null);
+  const [indexCharts, setIndexCharts] = useState<Record<string, PricePoint[]>>({});
+  const [stockCharts, setStockCharts] = useState<Record<string, PricePoint[]>>({});
+  const [chartsLoading, setChartsLoading] = useState(false);
+  const [stockChartsLoading, setStockChartsLoading] = useState(false);
+  const [showAllIndexes, setShowAllIndexes] = useState(false);
+
+  const topGainers = [...sectors].sort((a, b) => b.change - a.change).slice(0, 3);
+  const topDecliners = [...sectors].sort((a, b) => a.change - b.change).slice(0, 3);
+  const topStocks = useMemo(() => [...companies].sort((a, b) => b.scores.overall - a.scores.overall).slice(0, 5), [companies]);
+
+  // Fetch real chart data for indexes when index timeframe changes
+  useEffect(() => {
+    let cancelled = false;
+    setChartsLoading(true);
+    setIndexCharts({});
+
+    const fetchAll = async () => {
+      const promises = indexes.map(async (idx) => {
+        try {
+          const data = await fetchIndexHistory(idx.symbol, perfPeriod);
+          if (!cancelled && data.length > 2) {
+            setIndexCharts(prev => ({ ...prev, [idx.symbol]: data }));
+          }
+        } catch { /* skip */ }
+      });
+      await Promise.all(promises);
+      if (!cancelled) setChartsLoading(false);
+    };
+
+    fetchAll();
+    return () => { cancelled = true; };
+  }, [perfPeriod, indexes, fetchIndexHistory]);
+
+  // Fetch real chart data for top stocks when stock timeframe changes
+  useEffect(() => {
+    let cancelled = false;
+    setStockChartsLoading(true);
+    setStockCharts({});
+
+    const fetchAll = async () => {
+      const promises = topStocks.map(async (stock) => {
+        try {
+          const data = await fetchHistory(stock.ticker, stockPeriod);
+          if (!cancelled && data.length > 2) {
+            setStockCharts(prev => ({ ...prev, [stock.ticker]: data }));
+          }
+        } catch { /* skip */ }
+      });
+      await Promise.all(promises);
+      if (!cancelled) setStockChartsLoading(false);
+    };
+
+    fetchAll();
+    return () => { cancelled = true; };
+  }, [stockPeriod, topStocks, fetchHistory]);
+
+  if (selectedIndex) return <IndexDetail index={selectedIndex} onClose={() => setSelectedIndex(null)} />;
+  if (selectedStock) return <CompanyDetail company={selectedStock} onClose={() => setSelectedStock(null)} />;
 
   return (
     <div className="space-y-4">
@@ -22,11 +212,15 @@ export default function DashboardPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-bold">Market Overview</h1>
-          <p className="text-xs text-gray-500 mt-0.5">May 19, 2026 · Mock Data</p>
+          <p className="text-xs text-gray-500 mt-0.5">
+            {new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
+            {' · '}{dataSource}
+            {isLoading && ' · Updating...'}
+          </p>
         </div>
         <div className="flex items-center gap-2">
-          <span className={`text-xs px-2 py-1 rounded-full ${mockSentiment.value >= 50 ? 'badge-green' : 'badge-red'}`}>
-            {mockSentiment.label}
+          <span className={`text-xs px-2 py-1 rounded-full ${sentiment.value >= 50 ? 'badge-green' : 'badge-red'}`}>
+            {sentiment.label}
           </span>
         </div>
       </div>
@@ -34,25 +228,25 @@ export default function DashboardPage() {
       {/* Sentiment & Risk */}
       <div className="grid grid-cols-2 gap-3">
         <div className="card p-4">
-          <SentimentGauge value={mockSentiment.value} label={mockSentiment.label} />
+          <SentimentGauge value={sentiment.value} label={sentiment.label} />
         </div>
         <div className="card p-4">
           <div className="text-center">
             <p className="text-xs text-gray-400 mb-1">Macro Risk</p>
             <div className={`text-2xl font-bold ${
-              mockMacroRisk.level === 'Low' ? 'text-emerald-400' :
-              mockMacroRisk.level === 'Moderate' ? 'text-amber-400' : 'text-red-400'
+              macroRisk.level === 'Low' ? 'text-emerald-400' :
+              macroRisk.level === 'Moderate' ? 'text-amber-400' : 'text-red-400'
             }`}>
-              {mockMacroRisk.score}
+              {macroRisk.score}
             </div>
             <p className={`text-sm font-medium ${
-              mockMacroRisk.level === 'Low' ? 'text-emerald-400' :
-              mockMacroRisk.level === 'Moderate' ? 'text-amber-400' : 'text-red-400'
+              macroRisk.level === 'Low' ? 'text-emerald-400' :
+              macroRisk.level === 'Moderate' ? 'text-amber-400' : 'text-red-400'
             }`}>
-              {mockMacroRisk.level}
+              {macroRisk.level}
             </p>
             <div className="mt-2 space-y-1">
-              {mockMacroRisk.factors.slice(0, 3).map((f, i) => (
+              {macroRisk.factors.slice(0, 3).map((f, i) => (
                 <p key={i} className="text-[10px] text-gray-500 truncate">• {f}</p>
               ))}
             </div>
@@ -60,34 +254,74 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* Indexes */}
+      {/* Major Indexes — Large Cards */}
       <div>
         <SectionHeader title="Major Indexes" />
-        <TabBar tabs={perfTabs} active={perfPeriod} onChange={setPerfPeriod} />
-        <div className="mt-3 space-y-2">
-          {mockIndexes.map(idx => (
-            <div key={idx.symbol} className="card-compact p-3 flex items-center gap-3">
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-semibold">{idx.symbol}</span>
-                  <span className="text-xs text-gray-500 truncate">{idx.name}</span>
+        <TabBar tabs={perfTabs} active={perfPeriod} onChange={(id) => handleSetPerfPeriod(id as Timeframe)} />
+        <div className="mt-3 space-y-3">
+          {(showAllIndexes ? indexes : indexes.filter(idx => idx.symbol === 'SPX')).map(idx => {
+            const perfKey = perfKeyMap[perfPeriod] as keyof typeof idx.performance;
+            const perfValue = idx.performance[perfKey];
+            const chartData = indexCharts[idx.symbol];
+            const chartPerfValue = chartData && chartData.length >= 2
+              ? ((chartData[chartData.length - 1].value - chartData[0].value) / chartData[0].value) * 100
+              : perfValue;
+            const color = chartPerfValue >= 0 ? '#10b981' : '#ef4444';
+            const miniData = chartData && chartData.length > 2
+              ? chartData.map((p, i) => ({ i, v: p.value }))
+              : idx.sparkline.map((v, i) => ({ i, v }));
+            return (
+              <button
+                key={idx.symbol}
+                onClick={() => setSelectedIndex(idx)}
+                className="card p-4 w-full text-left active:scale-[0.98] transition-transform"
+              >
+                <div className="flex items-center justify-between mb-2">
+                  <div>
+                    <span className="text-base font-bold">{idx.symbol}</span>
+                    <span className="text-xs text-gray-500 ml-2">{idx.name}</span>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-base font-mono font-semibold">{idx.value.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
+                  </div>
                 </div>
-                <div className="flex items-center gap-2 mt-0.5">
-                  <span className="text-sm font-mono">{idx.value.toLocaleString()}</span>
-                  <ChangeIndicator value={idx.performance[perfPeriod as keyof typeof idx.performance]} />
+                <div className="flex items-center justify-between">
+                  <ChangeIndicator value={chartPerfValue} />
+                  <span className="text-[10px] text-gray-600">{chartsLoading && !chartData ? 'Loading...' : 'Tap to view chart →'}</span>
                 </div>
-              </div>
-              <MiniSparkline data={idx.sparkline} color={idx.changePercent >= 0 ? '#10b981' : '#ef4444'} />
-            </div>
-          ))}
+                <div className="h-16 mt-2">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart data={miniData} margin={{ top: 2, right: 0, bottom: 0, left: 0 }}>
+                      <defs>
+                        <linearGradient id={`spark-${idx.symbol}`} x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor={color} stopOpacity={0.2} />
+                          <stop offset="100%" stopColor={color} stopOpacity={0} />
+                        </linearGradient>
+                      </defs>
+                      <YAxis hide domain={['dataMin', 'dataMax']} />
+                      <Area type="monotone" dataKey="v" stroke={color} strokeWidth={1.5} fill={`url(#spark-${idx.symbol})`} dot={false} />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                </div>
+              </button>
+            );
+          })}
         </div>
+        {indexes.length > 1 && (
+          <button
+            onClick={() => setShowAllIndexes(!showAllIndexes)}
+            className="mt-3 w-full py-2.5 rounded-xl text-xs font-medium text-accent-400 bg-accent-500/10 border border-accent-500/20 active:scale-[0.98] transition-all"
+          >
+            {showAllIndexes ? 'Show less' : `Show ${indexes.length - 1} more indexes`}
+          </button>
+        )}
       </div>
 
       {/* Sector Heatmap */}
       <div>
         <SectionHeader title="Sector Heatmap" />
         <div className="grid grid-cols-2 gap-2">
-          {mockHeatmapData.map(sector => (
+          {heatmap.map(sector => (
             <div key={sector.sector} className="card-compact p-3">
               <p className="text-xs font-medium text-gray-300 mb-2">{sector.sector}</p>
               <div className="space-y-1">
@@ -127,29 +361,46 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* Top Opportunities */}
+      {/* Top Opportunities — Clickable */}
       <div>
         <SectionHeader title="Top Opportunities" />
-        <div className="space-y-2">
-          {topStocks.map((c, i) => (
-            <div key={c.ticker} className="card-compact p-3 flex items-center gap-3">
-              <div className="w-6 h-6 rounded-full bg-accent-500/20 flex items-center justify-center text-xs font-bold text-accent-400">
-                {i + 1}
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-semibold">{c.ticker}</span>
-                  <span className="text-xs text-gray-500 truncate">{c.name}</span>
+        <TabBar tabs={perfTabs} active={stockPeriod} onChange={(id) => handleSetStockPeriod(id as Timeframe)} />
+        <div className="mt-3 space-y-2">
+          {topStocks.map((c, i) => {
+            const chartData = stockCharts[c.ticker];
+            const chartPerf = chartData && chartData.length >= 2
+              ? ((chartData[chartData.length - 1].value - chartData[0].value) / chartData[0].value) * 100
+              : c.changePercent;
+            const sparkColor = chartPerf >= 0 ? '#10b981' : '#ef4444';
+            const miniPoints = chartData && chartData.length > 2
+              ? chartData.map(p => p.value)
+              : c.sparkline;
+            return (
+              <button
+                key={c.ticker}
+                onClick={() => setSelectedStock(c)}
+                className="card-compact p-3 flex items-center gap-3 w-full text-left active:scale-[0.98] transition-transform"
+              >
+                <div className="w-6 h-6 rounded-full bg-accent-500/20 flex items-center justify-center text-xs font-bold text-accent-400">
+                  {i + 1}
                 </div>
-                <div className="flex items-center gap-2 mt-0.5">
-                  <span className="text-xs text-gray-400">Score: {c.scores.overall}</span>
-                  <span className="text-xs text-gray-600">•</span>
-                  <ChangeIndicator value={c.changePercent} />
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-semibold">{c.ticker}</span>
+                    <span className="text-xs text-gray-500 truncate">{c.name}</span>
+                  </div>
+                  <div className="flex items-center gap-2 mt-0.5">
+                    <span className="text-xs font-mono">${c.price.toFixed(2)}</span>
+                    <span className="text-xs text-gray-600">•</span>
+                    <span className="text-xs text-gray-400">Score: {c.scores.overall}</span>
+                    <span className="text-xs text-gray-600">•</span>
+                    <ChangeIndicator value={chartPerf} />
+                  </div>
                 </div>
-              </div>
-              <MiniSparkline data={c.sparkline} color={c.changePercent >= 0 ? '#10b981' : '#ef4444'} height={24} />
-            </div>
-          ))}
+                <MiniSparkline data={miniPoints} color={sparkColor} height={24} />
+              </button>
+            );
+          })}
         </div>
       </div>
 
@@ -158,11 +409,13 @@ export default function DashboardPage() {
         <SectionHeader title="AI Market Brief" />
         <div className="card p-4">
           <div className="text-sm text-gray-300 leading-relaxed whitespace-pre-line">
-            {mockMarketSummary.split('**').map((part, i) =>
+            {summary.split('**').map((part, i) =>
               i % 2 === 1 ? <strong key={i} className="text-white">{part}</strong> : <span key={i}>{part}</span>
             )}
           </div>
-          <p className="text-[10px] text-gray-600 mt-3">Generated by AI · Based on mock data · Not financial advice</p>
+          <p className="text-[10px] text-gray-600 mt-3">
+            Generated by AI · {dataSource} · Not financial advice
+          </p>
         </div>
       </div>
 

@@ -1,7 +1,8 @@
-// AI Agent Service — Replace with OpenAI API or local LLM
+// AI Agent Service — Uses OpenAI when configured, mock data otherwise
 import { ChatMessage } from '../models/types';
 import { mockCompanies } from '../data/mockCompanies';
 import { mockTrends } from '../data/mockTrends';
+import { openaiService } from './openaiService';
 
 const delay = (ms: number) => new Promise(r => setTimeout(r, ms));
 
@@ -58,8 +59,34 @@ The market is in a broad uptrend led by AI infrastructure spending. Key themes i
 
 export const aiAgentService = {
   async chat(userMessage: string, _history: ChatMessage[]): Promise<ChatMessage> {
-    // TODO: Replace with real OpenAI/Anthropic API call
-    // const response = await fetch('https://api.openai.com/v1/chat/completions', { ... });
+    // If OpenAI is configured, use it
+    if (openaiService.isConfigured()) {
+      try {
+        const history = _history.map(m => ({ role: m.role, content: m.content }));
+        const content = await openaiService.chat(userMessage, history);
+        return {
+          id: crypto.randomUUID(),
+          role: 'assistant',
+          content,
+          timestamp: new Date().toISOString(),
+          confidence: 'High',
+          risks: ['AI-generated analysis', 'Market conditions change rapidly'],
+          dataFreshness: 'Live — powered by OpenAI',
+        };
+      } catch (err: any) {
+        return {
+          id: crypto.randomUUID(),
+          role: 'assistant',
+          content: `**OpenAI Error:** ${err.message}\n\nFalling back to mock responses. Check your API key in Settings.`,
+          timestamp: new Date().toISOString(),
+          confidence: 'Low',
+          risks: ['API error'],
+          dataFreshness: 'Error — using fallback',
+        };
+      }
+    }
+
+    // Mock fallback
     await delay(800 + Math.random() * 1200);
 
     const msg = userMessage.toLowerCase();

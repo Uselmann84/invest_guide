@@ -194,17 +194,77 @@ export default function SettingsPage() {
         </div>
       </div>
 
-      {/* API Keys placeholder */}
+      {/* API Keys & Live Mode */}
       <div className="card p-4">
-        <SectionHeader title="API Configuration" />
-        <p className="text-xs text-gray-500 mb-3">Connect real data sources (optional)</p>
-        {['Stock Price API', 'News API', 'SEC Filings API', 'OpenAI API'].map(api => (
-          <div key={api} className="mb-3">
-            <label className="text-xs text-gray-400 block mb-1">{api} Key</label>
-            <input type="password" placeholder="Enter API key..." className="input-field text-sm" />
+        <SectionHeader title="Live Mode & API" />
+        <p className="text-xs text-gray-500 mb-3">Stock data from Yahoo Finance (free). AI analysis powered by OpenAI.</p>
+
+        {/* Live Mode Toggle */}
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <p className="text-sm font-medium">Live Mode</p>
+            <p className="text-xs text-gray-500 mt-0.5">Enable AI-powered market analysis</p>
           </div>
-        ))}
-        <p className="text-[10px] text-gray-600">API keys are stored locally and never sent to third parties.</p>
+          <button
+            onClick={() => update('liveMode', !prefs.liveMode)}
+            className={`w-12 h-7 rounded-full transition-all ${prefs.liveMode ? 'bg-emerald-500' : 'bg-white/10'}`}
+          >
+            <div className={`w-5 h-5 rounded-full bg-white shadow-md transition-transform ${prefs.liveMode ? 'translate-x-6' : 'translate-x-1'}`} />
+          </button>
+        </div>
+
+        {/* OpenAI Key */}
+        <div className="mb-3">
+          <label className="text-xs text-gray-400 block mb-1">OpenAI API Key</label>
+          <input
+            type="password"
+            value={prefs.openaiApiKey}
+            onChange={e => update('openaiApiKey', e.target.value)}
+            placeholder="sk-..."
+            className="input-field text-sm"
+          />
+        </div>
+
+        {/* Model Select */}
+        <div className="mb-3">
+          <Select label="OpenAI Model" value={prefs.openaiModel}
+            options={['gpt-4o-mini', 'gpt-4o', 'gpt-4-turbo', 'gpt-3.5-turbo']}
+            onChange={v => update('openaiModel', v)} />
+        </div>
+
+        {prefs.liveMode && prefs.openaiApiKey && (
+          <div className="mt-2 p-2 rounded-lg bg-emerald-500/10 text-emerald-400 text-xs">
+            ✓ Live mode active — All data powered by OpenAI ({prefs.openaiModel})
+          </div>
+        )}
+        <p className="text-[10px] text-gray-600 mt-2">API keys are stored locally and never sent to third parties.</p>
+      </div>
+
+      {/* Auto Refresh */}
+      <div className="card p-4">
+        <SectionHeader title="Data Refresh" />
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <p className="text-sm font-medium">Auto Refresh</p>
+            <p className="text-xs text-gray-500 mt-0.5">Auto-fetch latest prices & AI analysis</p>
+          </div>
+          <button
+            onClick={() => update('autoRefresh', !prefs.autoRefresh)}
+            className={`w-12 h-7 rounded-full transition-all ${prefs.autoRefresh ? 'bg-accent-500' : 'bg-white/10'}`}
+          >
+            <div className={`w-5 h-5 rounded-full bg-white shadow-md transition-transform ${prefs.autoRefresh ? 'translate-x-6' : 'translate-x-1'}`} />
+          </button>
+        </div>
+        {prefs.autoRefresh && (
+          <Slider
+            label="Refresh Interval"
+            value={prefs.refreshIntervalSeconds}
+            min={10} max={300} step={10}
+            suffix="s"
+            onChange={v => update('refreshIntervalSeconds', v)}
+          />
+        )}
+        <p className="text-[10px] text-gray-600 mt-2">You can also manually refresh using the ↻ button in the header.</p>
       </div>
 
       {/* Disclaimer */}
