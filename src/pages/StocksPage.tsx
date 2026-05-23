@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback, useRef } from 'react';
+import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import { riskEngine } from '../services/riskEngine';
 import { historicalPriceService } from '../services/historicalPriceService';
 import { portfolioService } from '../services/portfolioService';
@@ -7,6 +7,17 @@ import { Company, Timeframe, PricePoint } from '../models/types';
 import { LineChart, Line, XAxis, YAxis, ResponsiveContainer, Tooltip, CartesianGrid, Area, AreaChart } from 'recharts';
 import { useMarketData } from '../components/MarketDataContext';
 import { yahooFinance } from '../services/yahooFinance';
+import { mockInstitutions } from '../data/mockInstitutions';
+import { aiAgentService } from '../services/aiAgentService';
+import { useEdgeSwipeClose } from '../hooks/useEdgeSwipeClose';
+import { useNavigation, useNavRequest } from '../components/NavigationContext';
+import { buildStockIndex, searchStockIndex, toCompany, aiResolveStock, IndexedStock } from '../services/stockIndexService';
+import { customStocksService } from '../services/customStocksService';
+import { askCacheService } from '../services/askCacheService';
+
+// Cross-component signal so toggling watch anywhere updates the watchlist tab immediately.
+const WATCHLIST_EVENT = 'invest_guide:watchlist_changed';
+export function emitWatchlistChanged() { try { window.dispatchEvent(new Event(WATCHLIST_EVENT)); } catch {} }
 
 const rankTabs = [
   { id: 'overall', label: 'Top Ranked' },
@@ -72,10 +83,13 @@ export function CompanyDetail({ company: initialCompany, onClose, onWatchlistCha
     if (inWatchlist) {
       portfolioService.removeFromWatchlist(company.ticker);
     } else {
+      // Make sure stub stocks (AI-resolved) stay resolvable in the watchlist.
+      if (company.scores.overall === 0) customStocksService.upsert(company);
       portfolioService.addToWatchlist(company.ticker);
     }
     setInWatchlist(!inWatchlist);
     onWatchlistChange?.();
+    emitWatchlistChanged();
   };
   const risk = riskEngine.assessCompanyRisk(company);
   const { fetchHistory } = useMarketData();
@@ -112,12 +126,86 @@ export function CompanyDetail({ company: initialCompany, onClose, onWatchlistCha
   const chartChangePercent = priceData.length >= 2 ? (chartChange / priceData[0].value) * 100 : 0;
   const chartColor = chartChange >= 0 ? '#10b981' : '#ef4444';
 
+  // Edge-swipe-to-close
+  const rootRef = useRef<HTMLDivElement>(null);
+  useEdgeSwipeClose(rootRef, onClose);
+
+  // Cross-page navigation (open institution from inst activity row)
+  const nav = useNavigation();
+
+  // Institutional activity for this ticker
+  const institutionalActivity = useMemo(() => {
+    const rows: { instId: string; instName: string; instType: string; action: 'Buy' | 'Sell' | 'New' | 'Exit'; shares: number; value: string; date: string }[] = [];
+    for (const inst of mockInstitutions) {
+      for (const t of inst.recentBuys) {
+        if (t.ticker === company.ticker) rows.push({ instId: inst.id, instName: inst.name, instType: inst.type, action: t.action, shares: t.shares, value: t.value, date: t.date });
+      }
+      for (const t of inst.recentSells) {
+        if (t.ticker === company.ticker) rows.push({ instId: inst.id, instName: inst.name, instType: inst.type, action: t.action, shares: t.shares, value: t.value, date: t.date });
+      }
+    }
+    return rows.sort((a, b) => b.date.localeCompare(a.date)).slice(0, 10);
+  }, [company.ticker]);
+
+  // Ask Agent modal (persisted via askCacheService)
+  const [askOpen, setAskOpen] = useState(false);
+  const [askLoading, setAskLoading] = useState(false);
+  const [askContent, setAskContent] = useState('');
+
+  const openAsk = useCallback(async () => {
+    setAskOpen(true);
+    const cacheKey = `stock:${company.ticker}`;
+    const cached = askCacheService.get(cacheKey);
+    if (cached) { setAskContent(cached); return; }
+    setAskLoading(true);
+    setAskContent('');
+    try {
+      const prompt = `Provide a detailed company profile for **${company.ticker} — ${company.name}**. Cover:\n1. Business model and main products / revenue segments\n2. Founder(s) and key leadership (names, background, year founded, headquarters)\n3. History and major milestones\n4. Competitive moat and market position\n5. Recent strategic developments and growth drivers\n\nBe factual and concise. Use markdown with bold headers and bullet points.`;
+      const res = await aiAgentService.chat(prompt, []);
+      askCacheService.set(cacheKey, res.content);
+      setAskContent(res.content);
+    } catch (err: any) {
+      setAskContent(`**Error:** ${err?.message ?? 'Failed to fetch'}`);
+    } finally {
+      setAskLoading(false);
+    }
+  }, [company.ticker, company.name]);
+
+  const renderAskMarkdown = (text: string) => text.split('\n').map((line, i) => {
+    if (line.startsWith('---')) return <hr key={i} className="border-white/10 my-2" />;
+    if (line.startsWith('**') && line.endsWith('**')) {
+      return <p key={i} className="font-semibold text-white mt-3">{line.replace(/\*\*/g, '')}</p>;
+    }
+    const parts = line.split(/(\*\*[^*]+\*\*)/g);
+    return (
+      <p key={i} className="text-sm text-gray-300 leading-relaxed">
+        {parts.map((part, j) =>
+          part.startsWith('**') && part.endsWith('**')
+            ? <strong key={j} className="text-white font-semibold">{part.slice(2, -2)}</strong>
+            : <span key={j}>{part}</span>
+        )}
+      </p>
+    );
+  });
+
   return (
-    <div className="fixed inset-0 z-50 bg-surface-950 overflow-y-auto">
+    <div ref={rootRef} className="fixed inset-0 z-50 bg-surface-950 overflow-y-auto">
       {/* Fixed back button bar */}
       <div className="fixed top-0 left-0 right-0 z-50 bg-surface-950/95 backdrop-blur-xl" style={{ paddingTop: 'env(safe-area-inset-top, 16px)' }}>
-        <div className="max-w-lg mx-auto px-4 py-2">
+        <div className="max-w-lg mx-auto px-4 py-2 flex items-center justify-between">
           <button onClick={onClose} className="text-gray-400 hover:text-white text-sm">← Back</button>
+          <button
+            onClick={toggleWatchlist}
+            title={inWatchlist ? 'Remove from watchlist' : 'Add to watchlist'}
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-sm transition-all ${
+              inWatchlist
+                ? 'bg-accent-500/15 text-accent-400 ring-1 ring-accent-500/30'
+                : 'bg-white/5 text-gray-400 hover:bg-white/10'
+            }`}
+          >
+            <span className="text-base leading-none">{inWatchlist ? '★' : '☆'}</span>
+            <span className="text-[11px] font-medium">{inWatchlist ? 'Watching' : 'Watch'}</span>
+          </button>
         </div>
       </div>
       <div className="max-w-lg mx-auto p-4 pb-24" style={{ paddingTop: 'calc(env(safe-area-inset-top, 16px) + 44px)' }}>
@@ -136,7 +224,27 @@ export function CompanyDetail({ company: initialCompany, onClose, onWatchlistCha
           </div>
         </div>
         {company.summary && (
-          <p className="text-xs text-gray-400 leading-relaxed mb-4 -mt-2">{company.summary}</p>
+          <div className="-mt-2 mb-4">
+            <p className="text-xs text-gray-400 leading-relaxed">{company.summary}</p>
+            <button
+              onClick={openAsk}
+              className="mt-2 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-gradient-to-r from-accent-500/20 to-purple-500/20 hover:from-accent-500/30 hover:to-purple-500/30 border border-accent-500/30 text-[11px] font-medium text-accent-300 transition-all"
+            >
+              <span>🤖</span>
+              <span>Ask Agent for Details</span>
+            </button>
+          </div>
+        )}
+        {!company.summary && (
+          <div className="-mt-2 mb-4">
+            <button
+              onClick={openAsk}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-gradient-to-r from-accent-500/20 to-purple-500/20 hover:from-accent-500/30 hover:to-purple-500/30 border border-accent-500/30 text-[11px] font-medium text-accent-300 transition-all"
+            >
+              <span>🤖</span>
+              <span>Ask Agent for Details</span>
+            </button>
+          </div>
         )}
 
         {/* Price Chart */}
@@ -224,6 +332,11 @@ export function CompanyDetail({ company: initialCompany, onClose, onWatchlistCha
         {/* AI Scores */}
         <div className="card p-4 mb-4">
           <SectionHeader title="AI Scores" />
+          {company.scores.overall === 0 && (
+            <p className="text-xs text-gray-400 mb-3 -mt-1">
+              Analysis pending for this stock. Scores update once we ingest enough market data — usually within a few minutes.
+            </p>
+          )}
           <div className="space-y-2">
             {[
               { label: 'Overall', value: company.scores.overall },
@@ -253,6 +366,47 @@ export function CompanyDetail({ company: initialCompany, onClose, onWatchlistCha
             </div>
           </div>
         )}
+
+        {/* Institutional Activity */}
+        <div className="card p-4 mb-4">
+          <SectionHeader title="Institutional Activity" />
+          {institutionalActivity.length === 0 ? (
+            <p className="text-xs text-gray-500">No recent institutional activity tracked for this ticker.</p>
+          ) : (
+            <div className="space-y-2">
+              {institutionalActivity.map((row, i) => {
+                const isBuy = row.action === 'Buy' || row.action === 'New';
+                return (
+                  <button
+                    key={`${row.instId}-${i}`}
+                    onClick={() => nav.openInstitution(row.instId)}
+                    style={{ WebkitTapHighlightColor: 'transparent' }}
+                    className="w-full flex items-center gap-3 px-2.5 py-2 rounded-lg bg-white/[0.02] active:bg-white/10 border border-white/5 transition-colors duration-75 text-left focus:outline-none focus-visible:ring-1 focus-visible:ring-accent-500/40"
+                  >
+                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-[10px] font-bold shrink-0 ${
+                      isBuy ? 'bg-emerald-500/15 text-emerald-400' : 'bg-red-500/15 text-red-400'
+                    }`}>
+                      {row.instName.split(' ').map(w => w[0]).join('').slice(0, 2)}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-xs font-semibold text-white truncate">{row.instName}</span>
+                        <span className={`text-[9px] px-1.5 py-0.5 rounded-md font-bold tracking-wide ${
+                          isBuy ? 'bg-emerald-500/20 text-emerald-400' : 'bg-red-500/20 text-red-400'
+                        }`}>{row.action.toUpperCase()}</span>
+                      </div>
+                      <p className="text-[10px] text-gray-500 mt-0.5">{row.instType} · {row.shares.toLocaleString()} sh · {row.date}</p>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <p className={`text-xs font-mono font-semibold ${isBuy ? 'text-emerald-400' : 'text-red-400'}`}>{row.value}</p>
+                      <p className="text-[9px] text-gray-600">View →</p>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
 
         {/* Risk Assessment */}
         <div className="card p-4 mb-4">
@@ -310,6 +464,45 @@ export function CompanyDetail({ company: initialCompany, onClose, onWatchlistCha
 
         <Disclaimer />
       </div>
+
+      {/* Ask Agent Modal */}
+      {askOpen && (
+        <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm animate-[fadeIn_180ms_ease-out]" onClick={() => setAskOpen(false)}>
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-full sm:max-w-lg sm:rounded-2xl bg-surface-900 border border-white/10 shadow-2xl flex flex-col"
+            style={{ maxHeight: '88vh', animation: 'slideUp 240ms cubic-bezier(0.22, 1, 0.36, 1)' }}
+          >
+            <div className="flex items-center justify-between px-4 py-3 border-b border-white/10 bg-gradient-to-r from-accent-500/10 to-purple-500/10 sm:rounded-t-2xl">
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="text-base">🤖</span>
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-white truncate">{company.ticker} — Deep Profile</p>
+                  <p className="text-[10px] text-gray-500">AI-generated company analysis</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setAskOpen(false)}
+                className="w-8 h-8 rounded-full bg-white/5 hover:bg-white/10 active:bg-white/15 flex items-center justify-center text-gray-400 hover:text-white transition-all"
+                aria-label="Close"
+              >×</button>
+            </div>
+            <div className="flex-1 overflow-y-auto px-4 py-3">
+              {askLoading ? (
+                <div className="flex flex-col items-center justify-center py-12">
+                  <div className="w-8 h-8 border-2 border-accent-500 border-t-transparent rounded-full animate-spin mb-3" />
+                  <p className="text-xs text-gray-500">Generating detailed profile...</p>
+                </div>
+              ) : (
+                <div className="space-y-1">{renderAskMarkdown(askContent)}</div>
+              )}
+            </div>
+            <div className="px-4 py-2 border-t border-white/10 sm:rounded-b-2xl">
+              <p className="text-[10px] text-gray-600 text-center">AI-generated · Verify before acting · Not financial advice</p>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -421,11 +614,18 @@ export default function StocksPage() {
   const [search, setSearch] = useState('');
   const [rankBy, setRankBy] = useState('overall');
   const [selected, setSelected] = useState<Company | null>(null);
-  const [activeTab, setActiveTab] = useState<'ranked' | 'watchlist' | 'movers'>('ranked');
+  const scrollPosRef = useRef(0);
+  const [activeTab, setActiveTab] = useState<'ranked' | 'watchlist' | 'movers'>('watchlist');
   const [watchlist, setWatchlist] = useState<string[]>(() => portfolioService.getWatchlist());
   const [movers, setMovers] = useState<{ gainers: Company[]; active: Company[]; trending: Company[] }>({ gainers: [], active: [], trending: [] });
   const [moversLoading, setMoversLoading] = useState(false);
   const [moversSub, setMoversSub] = useState<'gainers' | 'active' | 'trending'>('gainers');
+
+  // Global watchlist search state
+  const [wlSearch, setWlSearch] = useState('');
+  const [aiAdding, setAiAdding] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
+  const [customStocks, setCustomStocks] = useState<Company[]>(() => customStocksService.list());
 
   // Resolve a mover stock: use existing analyzed company if available, else create stub for live fetch
   const resolveCompany = useCallback((mover: Company) => {
@@ -451,6 +651,16 @@ export default function StocksPage() {
 
   const refreshWatchlist = useCallback(() => setWatchlist(portfolioService.getWatchlist()), []);
 
+  // Keep the watchlist tab in sync when toggled from other pages (DashboardPage, InstitutionsPage, etc.).
+  useEffect(() => {
+    const onChange = () => {
+      setWatchlist(portfolioService.getWatchlist());
+      setCustomStocks(customStocksService.list());
+    };
+    window.addEventListener('invest_guide:watchlist_changed', onChange);
+    return () => window.removeEventListener('invest_guide:watchlist_changed', onChange);
+  }, []);
+
   const filtered = useMemo(() => {
     let list = companies;
     if (search) {
@@ -464,11 +674,65 @@ export default function StocksPage() {
     });
   }, [search, rankBy]);
 
-  const watchlistCompanies = useMemo(() => {
-    return companies.filter(c => watchlist.includes(c.ticker));
-  }, [companies, watchlist]);
+  // All known companies = analyzed + custom (AI-added) stocks
+  const allKnownCompanies = useMemo(() => {
+    const map = new Map<string, Company>();
+    for (const c of companies) map.set(c.ticker, c);
+    for (const c of customStocks) if (!map.has(c.ticker)) map.set(c.ticker, c);
+    return [...map.values()];
+  }, [companies, customStocks]);
 
-  if (selected) return <CompanyDetail company={selected} onClose={() => { setSelected(null); refreshWatchlist(); }} onWatchlistChange={refreshWatchlist} />;
+  const watchlistCompanies = useMemo(() => {
+    return allKnownCompanies.filter(c => watchlist.includes(c.ticker));
+  }, [allKnownCompanies, watchlist]);
+
+  const openStock = useCallback((c: Company) => { scrollPosRef.current = window.scrollY; setSelected(c); }, []);
+  const closeStock = useCallback(() => { setSelected(null); refreshWatchlist(); requestAnimationFrame(() => window.scrollTo(0, scrollPosRef.current)); }, [refreshWatchlist]);
+
+  // Global ticker index — rebuilt when companies/customStocks change
+  const stockIndex = useMemo(() => {
+    const idx = buildStockIndex(allKnownCompanies);
+    return idx;
+  }, [allKnownCompanies]);
+  const wlSearchResults = useMemo<IndexedStock[]>(() => searchStockIndex(stockIndex, wlSearch, 40), [stockIndex, wlSearch]);
+
+  const aiSearchAndAdd = useCallback(async (query: string) => {
+    setAiError(null);
+    setAiAdding(true);
+    try {
+      const stub = await aiResolveStock(query);
+      if (!stub) {
+        setAiError(`No stock found matching "${query}".`);
+        return;
+      }
+      // Persist so the stock is reachable later (search index, watchlist UI),
+      // but DO NOT auto-add to the watchlist — user must tap the star manually.
+      customStocksService.upsert(stub);
+      setCustomStocks(customStocksService.list());
+      setWlSearch('');
+      // Open the detail page so user sees the new stock immediately
+      scrollPosRef.current = window.scrollY;
+      setSelected(stub);
+    } catch (err: any) {
+      setAiError(err?.message ?? 'Search failed');
+    } finally {
+      setAiAdding(false);
+    }
+  }, []);
+
+  // Cross-page navigation: open a stock detail when requested from elsewhere
+  useNavRequest('stocks', (req) => {
+    if (!req.ticker) return;
+    const c = allKnownCompanies.find(x => x.ticker === req.ticker);
+    if (c) { setSelected(c); return; }
+    // Look it up in the unified index
+    const idx = stockIndex.find(s => s.ticker === req.ticker);
+    if (idx) { setSelected(toCompany(idx)); return; }
+    // Last resort: AI resolve
+    aiSearchAndAdd(req.ticker);
+  });
+
+  if (selected) return <CompanyDetail company={selected} onClose={closeStock} onWatchlistChange={refreshWatchlist} />;
 
   return (
     <div className="space-y-4">
@@ -477,8 +741,12 @@ export default function StocksPage() {
         <p className="text-xs text-gray-500 mt-0.5">AI-ranked companies across multiple factors</p>
       </div>
 
-      {/* Top-level tab: Ranked vs Movers vs Watchlist */}
+      {/* Top-level tab: Watchlist (default) vs Ranked vs Movers */}
       <div className="flex gap-1 bg-white/[0.03] rounded-xl p-1">
+        <button onClick={() => setActiveTab('watchlist')}
+          className={`flex-1 py-2 rounded-lg text-xs font-semibold transition-all ${
+            activeTab === 'watchlist' ? 'bg-accent-500/20 text-accent-400' : 'text-gray-500'
+          }`}>⭐ Watchlist{watchlist.length > 0 ? ` (${watchlist.length})` : ''}</button>
         <button onClick={() => setActiveTab('ranked')}
           className={`flex-1 py-2 rounded-lg text-xs font-semibold transition-all ${
             activeTab === 'ranked' ? 'bg-white/10 text-white' : 'text-gray-500'
@@ -487,10 +755,6 @@ export default function StocksPage() {
           className={`flex-1 py-2 rounded-lg text-xs font-semibold transition-all ${
             activeTab === 'movers' ? 'bg-emerald-500/20 text-emerald-400' : 'text-gray-500'
           }`}>🔥 Movers</button>
-        <button onClick={() => setActiveTab('watchlist')}
-          className={`flex-1 py-2 rounded-lg text-xs font-semibold transition-all ${
-            activeTab === 'watchlist' ? 'bg-accent-500/20 text-accent-400' : 'text-gray-500'
-          }`}>⭐ Watchlist{watchlist.length > 0 ? ` (${watchlist.length})` : ''}</button>
       </div>
 
       {activeTab === 'ranked' && (
@@ -510,7 +774,7 @@ export default function StocksPage() {
               const inWl = watchlist.includes(c.ticker);
               return (
               <div key={c.ticker} className="card-compact p-3 w-full flex items-center gap-3 hover:border-accent-500/30 transition-all">
-                <button onClick={() => setSelected(c)} className="flex items-center gap-3 flex-1 min-w-0 text-left">
+                <button onClick={() => openStock(c)} className="flex items-center gap-3 flex-1 min-w-0 text-left">
                   <div className="w-6 h-6 rounded-full bg-white/5 flex items-center justify-center text-[10px] font-bold text-gray-400">
                     {i + 1}
                   </div>
@@ -536,6 +800,7 @@ export default function StocksPage() {
                   if (inWl) portfolioService.removeFromWatchlist(c.ticker);
                   else portfolioService.addToWatchlist(c.ticker);
                   refreshWatchlist();
+                  emitWatchlistChanged();
                 }} className={`text-lg shrink-0 px-1 transition-all ${inWl ? 'text-accent-400' : 'text-gray-600'}`}>
                   {inWl ? '★' : '☆'}
                 </button>
@@ -567,7 +832,7 @@ export default function StocksPage() {
                   <p className="text-gray-400 text-sm">No data available</p>
                 </div>
               ) : movers[moversSub].map((c, i) => (
-                <button key={c.ticker} onClick={() => setSelected(resolveCompany(c))} className="card-compact p-3 w-full flex items-center gap-3 hover:border-emerald-500/30 transition-all text-left">
+                <button key={c.ticker} onClick={() => openStock(resolveCompany(c))} className="card-compact p-3 w-full flex items-center gap-3 hover:border-emerald-500/30 transition-all text-left">
                   <div className="w-6 h-6 rounded-full bg-white/5 flex items-center justify-center text-[10px] font-bold text-gray-400">
                     {i + 1}
                   </div>
@@ -605,19 +870,115 @@ export default function StocksPage() {
       )}
 
       {activeTab === 'watchlist' && (
-        <div className="space-y-2">
-          {watchlistCompanies.length === 0 ? (
+        <div className="space-y-3">
+          {/* Global stock search bar */}
+          <div className="relative">
+            <input
+              type="text"
+              value={wlSearch}
+              onChange={e => { setWlSearch(e.target.value); setAiError(null); }}
+              placeholder="Search stock..."
+              className="input-field pr-9"
+            />
+            {wlSearch && (
+              <button
+                onClick={() => { setWlSearch(''); setAiError(null); }}
+                className="absolute right-3 top-1/2 -translate-y-1/2 w-6 h-6 rounded-full bg-white/5 hover:bg-white/10 flex items-center justify-center text-gray-400 text-xs"
+                aria-label="Clear"
+              >×</button>
+            )}
+          </div>
+
+          {wlSearch.trim() !== '' ? (
+            <div className="space-y-2">
+              {wlSearchResults.length > 0 ? (
+                <>
+                  <p className="text-[10px] uppercase tracking-wider text-gray-500 font-semibold px-1">
+                    {wlSearchResults.length} match{wlSearchResults.length === 1 ? '' : 'es'}
+                  </p>
+                  {wlSearchResults.map(s => {
+                    const inWl = watchlist.includes(s.ticker);
+                    return (
+                      <div key={s.ticker} className="card-compact p-3 flex items-center gap-3 hover:border-accent-500/30 transition-all">
+                        <button
+                          onClick={() => openStock(toCompany(s))}
+                          className="flex items-center gap-3 flex-1 min-w-0 text-left"
+                        >
+                          <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-accent-500/20 to-accent-500/5 flex items-center justify-center text-xs font-bold text-accent-400 shrink-0">
+                            {s.ticker.slice(0, 2)}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm font-semibold">{s.ticker}</span>
+                              <span className="text-[10px] text-gray-500 truncate">{s.name}</span>
+                            </div>
+                            <div className="flex items-center gap-2 mt-0.5">
+                              {s.price && s.price > 0 ? (
+                                <>
+                                  <span className="text-[11px] font-mono text-white">${s.price.toFixed(2)}</span>
+                                  {typeof s.changePercent === 'number' && <ChangeIndicator value={s.changePercent} />}
+                                </>
+                              ) : (
+                                <span className="text-[10px] text-gray-500">{s.sector ?? 'Stock'}</span>
+                              )}
+                            </div>
+                          </div>
+                        </button>
+                        <button
+                          onClick={() => {
+                            if (inWl) portfolioService.removeFromWatchlist(s.ticker);
+                            else { customStocksService.upsert(toCompany(s)); portfolioService.addToWatchlist(s.ticker); }
+                            refreshWatchlist();
+                            setCustomStocks(customStocksService.list());
+                            emitWatchlistChanged();
+                          }}
+                          title={inWl ? 'Remove from watchlist' : 'Add to watchlist'}
+                          className={`text-xl shrink-0 px-1 transition-all ${inWl ? 'text-accent-400' : 'text-gray-600 hover:text-accent-400'}`}
+                        >
+                          {inWl ? '★' : '☆'}
+                        </button>
+                      </div>
+                    );
+                  })}
+                </>
+              ) : (
+                <div className="card p-5 text-center">
+                  <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-accent-500/20 to-purple-500/10 flex items-center justify-center text-xl mx-auto mb-3">🔎</div>
+                  <p className="text-sm text-gray-300 font-medium mb-1">No matches in the app</p>
+                  <p className="text-[11px] text-gray-500 mb-3">Let the AI find "{wlSearch}" online and add it automatically.</p>
+                  <button
+                    onClick={() => aiSearchAndAdd(wlSearch)}
+                    disabled={aiAdding}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-gradient-to-r from-accent-500/30 to-purple-500/30 hover:from-accent-500/40 hover:to-purple-500/40 border border-accent-500/40 text-xs font-medium text-accent-200 transition-all disabled:opacity-50"
+                  >
+                    {aiAdding ? (
+                      <>
+                        <span className="w-3 h-3 border-2 border-accent-300 border-t-transparent rounded-full animate-spin" />
+                        <span>Searching...</span>
+                      </>
+                    ) : (
+                      <>
+                        <span>🤖</span>
+                        <span>AI Search & Add</span>
+                      </>
+                    )}
+                  </button>
+                  {aiError && <p className="text-[10px] text-red-400 mt-2">{aiError}</p>}
+                </div>
+              )}
+            </div>
+          ) : watchlistCompanies.length === 0 ? (
             <div className="card p-8 text-center">
               <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-accent-500/20 to-amber-500/10 flex items-center justify-center text-2xl mx-auto mb-4">⭐</div>
               <p className="text-gray-400 text-sm font-medium mb-1">No stocks in watchlist</p>
-              <p className="text-gray-600 text-xs">Tap a stock and use the ☆ Watch button to add it</p>
+              <p className="text-gray-600 text-xs">Search a stock above to add it, or open a stock and tap the ☆ button.</p>
             </div>
           ) : (
             <WatchlistDragList
               companies={watchlistCompanies}
               watchlist={watchlist}
               onReorder={(newOrder) => { portfolioService.saveWatchlist(newOrder); refreshWatchlist(); }}
-              onSelect={setSelected}
+              onSelect={openStock}
             />
           )}
         </div>

@@ -225,6 +225,14 @@ export interface ChatMessage {
   dataFreshness?: string;
 }
 
+export interface Conversation {
+  id: string;
+  title: string;
+  createdAt: string;
+  updatedAt: string;
+  messages: ChatMessage[];
+}
+
 // ---- Risk ----
 export interface RiskAssessment {
   ticker: string;

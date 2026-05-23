@@ -447,11 +447,23 @@ CRITICAL: The summary value must be a valid JSON string. Use \\n for newlines, N
         throw new Error('AI response missing summary. Try refreshing again.');
       }
 
+      // Strip any leaked JSON tail (e.g., "heatmap":[...]) that may have been
+      // captured by the lenient fallback parser.
+      const cleanSummary = (() => {
+        let s: string = parsed.summary.replace(/\\n/g, '\n');
+        // Cut at the first "heatmap" / "sentiment" / "macroRisk" key occurrence
+        const cutMatch = s.match(/[",}\s]*"(heatmap|sentiment|macroRisk)"\s*:/);
+        if (cutMatch && cutMatch.index !== undefined) s = s.slice(0, cutMatch.index);
+        // Trim trailing JSON garbage (quotes, commas, braces, brackets)
+        s = s.replace(/[\s",}\]]+$/g, '').trim();
+        return s;
+      })();
+
       const result: AnalysisCache = {
         timestamp: Date.now(),
         sentiment: parsed.sentiment || mockSentiment,
         macroRisk: parsed.macroRisk || mockMacroRisk,
-        summary: parsed.summary.replace(/\\n/g, '\n'),
+        summary: cleanSummary,
         heatmap: parsed.heatmap || mockHeatmapData,
       };
       setCache(ANALYSIS_CACHE_KEY, result);

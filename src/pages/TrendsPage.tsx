@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useRef } from 'react';
 import { mockTrends } from '../data/mockTrends';
-import { ScoreBar, SectionHeader, TabBar } from '../components/SharedComponents';
+import { ScoreBar, SectionHeader, TabBar, Disclaimer } from '../components/SharedComponents';
 import { TechTrend, Company } from '../models/types';
 import { useMarketData } from '../components/MarketDataContext';
 import { CompanyDetail } from './StocksPage';
@@ -140,6 +140,13 @@ export default function TrendsPage() {
         </button>
       </div>
 
+      {aiStatus.startsWith('cooldown') && (
+        <div className="card p-3 flex items-center gap-2 border border-amber-500/20">
+          <span className="text-amber-400">⏳</span>
+          <p className="text-xs text-amber-300">{aiStatus.replace('cooldown: ', '')}</p>
+        </div>
+      )}
+
       {aiStatus.startsWith('error') && (
         <div className="card p-3 flex items-center gap-2 border border-red-500/20">
           <span className="text-red-400">✗</span>
@@ -184,6 +191,8 @@ export default function TrendsPage() {
           🤖 AI-updated · {new Date(trendsGeneratedAt).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
         </p>
       )}
+
+      <Disclaimer />
     </div>
   );
 }

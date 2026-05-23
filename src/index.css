@@ -26,6 +26,15 @@
   }
 }
 
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes slideUp {
+  from { transform: translateY(24px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
 @layer components {
   .card {
     @apply bg-surface-850/80 backdrop-blur-sm rounded-2xl border border-white/5 shadow-lg;

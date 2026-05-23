@@ -10,13 +10,14 @@ import SettingsPage from './pages/SettingsPage';
 import PortfolioPage from './pages/PortfolioPage';
 import { RefreshProvider, useRefresh } from './components/RefreshContext';
 import { MarketDataProvider } from './components/MarketDataContext';
+import { NavigationProvider } from './components/NavigationContext';
 import { userPreferenceService } from './services/userPreferenceService';
 
 const tabs: { id: TabId; label: string; icon: string }[] = [
   { id: 'home', label: 'Home', icon: '⌂' },
   { id: 'trends', label: 'Trends', icon: '◎' },
-  { id: 'stocks', label: 'Stocks', icon: '◈' },
   { id: 'institutions', label: 'Inst.', icon: '◉' },
+  { id: 'stocks', label: 'Stocks', icon: '◈' },
   { id: 'portfolio', label: 'Portfolio', icon: '◫' },
   { id: 'agent', label: 'Agent', icon: '◬' },
   { id: 'settings', label: 'Settings', icon: '⚙' },
@@ -65,8 +66,19 @@ function NavIcon({ id, active }: { id: TabId; active: boolean }) {
 }
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<TabId>('home');
+  const [activeTab, setActiveTabRaw] = useState<TabId>(() => {
+    try {
+      const stored = localStorage.getItem('invest_guide_active_tab') as TabId | null;
+      const valid: TabId[] = ['home', 'trends', 'stocks', 'institutions', 'portfolio', 'agent', 'settings'];
+      return stored && valid.includes(stored) ? stored : 'home';
+    } catch { return 'home'; }
+  });
   const [showDisclaimer, setShowDisclaimer] = useState(() => !localStorage.getItem('invest_guide_disclaimer_accepted'));
+
+  const setActiveTab = React.useCallback((t: TabId) => {
+    setActiveTabRaw(t);
+    try { localStorage.setItem('invest_guide_active_tab', t); } catch { /* */ }
+  }, []);
 
   if (showDisclaimer) {
     return (
@@ -128,7 +140,9 @@ export default function App() {
   return (
     <RefreshProvider>
       <MarketDataProvider>
-        <AppContent activeTab={activeTab} setActiveTab={setActiveTab} pages={pages} />
+        <NavigationProvider activeTab={activeTab} setActiveTab={setActiveTab}>
+          <AppContent activeTab={activeTab} setActiveTab={setActiveTab} pages={pages} />
+        </NavigationProvider>
       </MarketDataProvider>
     </RefreshProvider>
   );
@@ -141,6 +155,27 @@ function AppContent({ activeTab, setActiveTab, pages }: {
 }) {
   const { lastRefresh, isRefreshing, triggerRefresh } = useRefresh();
   const prefs = userPreferenceService.getPreferences();
+
+  // Persist per-tab scroll position so switching tabs and returning preserves
+  // the previous content position. We listen to window scroll and store the
+  // current tab's offset; on tab change we restore the target tab's offset.
+  const scrollByTab = React.useRef<Record<TabId, number>>({} as Record<TabId, number>);
+  const prevTab = React.useRef<TabId>(activeTab);
+
+  React.useEffect(() => {
+    const onScroll = () => { scrollByTab.current[prevTab.current] = window.scrollY; };
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
+  }, []);
+
+  React.useEffect(() => {
+    // Save scroll for the tab we're leaving
+    scrollByTab.current[prevTab.current] = window.scrollY;
+    prevTab.current = activeTab;
+    // Restore scroll for the tab we're entering (next frame so layout settles)
+    const y = scrollByTab.current[activeTab] ?? 0;
+    requestAnimationFrame(() => window.scrollTo(0, y));
+  }, [activeTab]);
 
   return (
     <div className="min-h-screen bg-surface-950 text-white">
@@ -178,9 +213,15 @@ function AppContent({ activeTab, setActiveTab, pages }: {
         </div>
       </header>
 
-      {/* Main content — offset for fixed header */}
+      {/* Main content — offset for fixed header. All pages stay mounted; we
+          hide inactive ones so each page preserves its internal state, scroll
+          position, sub-tab selection, and any open detail overlays. */}
       <main className="px-4 pb-24 max-w-lg mx-auto" style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 52px)' }}>
-        {pages[activeTab]}
+        {(Object.keys(pages) as TabId[]).map(id => (
+          <div key={id} style={{ display: id === activeTab ? 'block' : 'none' }}>
+            {pages[id]}
+          </div>
+        ))}
       </main>
 
       {/* Bottom navigation */}

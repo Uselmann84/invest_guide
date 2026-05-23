@@ -523,6 +523,12 @@ export default function DashboardPage() {
             <p className="text-xs text-emerald-400">AI analysis updated successfully</p>
           </div>
         )}
+        {aiStatus.startsWith('cooldown') && (
+          <div className="card p-3 mb-2 flex items-center gap-2 border border-amber-500/20">
+            <span className="text-amber-400">⏳</span>
+            <p className="text-xs text-amber-300">{aiStatus.replace('cooldown: ', '')}</p>
+          </div>
+        )}
         {aiStatus.startsWith('error') && (
           <div className="card p-3 mb-2 flex items-center gap-2 border border-red-500/20">
             <span className="text-red-400">✗</span>
@@ -563,7 +569,6 @@ export default function DashboardPage() {
       </div>
 
       <Disclaimer />
-      <p className="text-[9px] text-gray-700 text-center pb-2">v1.1.1</p>
     </div>
   );
 }

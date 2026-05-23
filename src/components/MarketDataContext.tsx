@@ -86,7 +86,14 @@ export function MarketDataProvider({ children }: { children: React.ReactNode }) 
       const stored = localStorage.getItem('invest_guide_ai_brief');
       if (stored) {
         const { summary: s, sentiment: sen, macroRisk: mr, heatmap: hm, generatedAt } = JSON.parse(stored);
-        if (s) { setSummary(s); setAiStatus('done'); setAiGeneratedAt(generatedAt); }
+        if (s) {
+          // Strip any leaked JSON tail from older buggy generations
+          let cleaned = s as string;
+          const cutMatch = cleaned.match(/[",}\s]*"(heatmap|sentiment|macroRisk)"\s*:/);
+          if (cutMatch && cutMatch.index !== undefined) cleaned = cleaned.slice(0, cutMatch.index);
+          cleaned = cleaned.replace(/[\s",}\]]+$/g, '').trim();
+          setSummary(cleaned); setAiStatus('done'); setAiGeneratedAt(generatedAt);
+        }
         if (sen) setSentiment(sen);
         if (mr) setMacroRisk(mr);
         if (hm) setHeatmap(hm);
@@ -186,6 +193,20 @@ export function MarketDataProvider({ children }: { children: React.ReactNode }) 
 
   const runAiAnalysis = useCallback(async () => {
     if (!marketDataService.isLive()) return;
+    // 20-minute cooldown — keep showing previously cached data
+    const COOLDOWN_MS = 20 * 60 * 1000;
+    const lastGen = Math.max(aiGeneratedAt || 0, trendsGeneratedAt || 0);
+    if (lastGen > 0) {
+      const elapsed = Date.now() - lastGen;
+      if (elapsed < COOLDOWN_MS) {
+        const remainingMs = COOLDOWN_MS - elapsed;
+        const mins = Math.floor(remainingMs / 60000);
+        const secs = Math.floor((remainingMs % 60000) / 1000);
+        const remaining = mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
+        setAiStatus(`cooldown: Next AI update available in ${remaining}`);
+        return;
+      }
+    }
     setAiStatus('running');
     try {
       const topStocks = companies
@@ -251,7 +272,7 @@ export function MarketDataProvider({ children }: { children: React.ReactNode }) 
       console.error('AI analysis failed:', e);
       setAiStatus(`error: ${e.message || 'Unknown error'}`);
     }
-  }, [companies, indexes, sectors, trends]);
+  }, [companies, indexes, sectors, trends, aiGeneratedAt, trendsGeneratedAt]);
 
   const runDataSummary = useCallback(() => {
     setSummary(marketDataService.generateSummary(indexes, sectors, companies));

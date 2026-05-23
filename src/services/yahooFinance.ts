@@ -50,6 +50,29 @@ async function fetchJSON(url: string): Promise<any> {
 }
 
 export const yahooFinance = {
+  // Free-text search → best ticker match. e.g. "tesla" → { symbol: "TSLA", name: "Tesla, Inc." }
+  async searchSymbol(query: string): Promise<{ symbol: string; name: string; sector?: string; industry?: string; exchange?: string } | null> {
+    const q = query.trim();
+    if (!q) return null;
+    try {
+      const url = `https://query2.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(q)}&quotesCount=5&newsCount=0`;
+      const data = await fetchJSON(url);
+      const quotes: any[] = data?.quotes ?? [];
+      // Prefer equity matches
+      const equity = quotes.find(x => x.quoteType === 'EQUITY') ?? quotes[0];
+      if (!equity || !equity.symbol) return null;
+      return {
+        symbol: equity.symbol,
+        name: equity.shortname ?? equity.longname ?? equity.symbol,
+        sector: equity.sectorDisp ?? equity.sector,
+        industry: equity.industryDisp ?? equity.industry,
+        exchange: equity.exchange,
+      };
+    } catch {
+      return null;
+    }
+  },
+
   // Fetch quotes for multiple tickers at once
   async getQuotes(tickers: string[]): Promise<Record<string, YahooQuote>> {
     const results: Record<string, YahooQuote> = {};

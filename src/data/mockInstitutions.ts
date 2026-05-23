@@ -11,15 +11,16 @@ export const mockInstitutions: Institution[] = [
       { ticker: 'CVX', name: 'Chevron', weight: 5.8, shares: 118000000, value: '$18.2B', change: -3.4 },
     ],
     recentBuys: [
-      { ticker: 'CB', name: 'Chubb Limited', action: 'Buy', shares: 25800000, value: '$6.7B', date: '2024-Q4' },
-      { ticker: 'SU', name: 'Suncor Energy', action: 'Buy', shares: 4200000, value: '$142M', date: '2024-Q4' },
+      { ticker: 'CB', name: 'Chubb Limited', action: 'Buy', shares: 4800000, value: '$1.4B', date: '2026-Q1' },
+      { ticker: 'SU', name: 'Suncor Energy', action: 'Buy', shares: 2800000, value: '$98M', date: '2025-Q4' },
+      { ticker: 'ULTA', name: 'Ulta Beauty', action: 'Buy', shares: 690000, value: '$266M', date: '2026-Q1' },
     ],
     recentSells: [
-      { ticker: 'AAPL', name: 'Apple', action: 'Sell', shares: 100000000, value: '$19.8B', date: '2024-Q4' },
-      { ticker: 'HPQ', name: 'HP Inc', action: 'Exit', shares: 11000000, value: '$354M', date: '2024-Q4' },
+      { ticker: 'AAPL', name: 'Apple', action: 'Sell', shares: 75000000, value: '$16.2B', date: '2026-Q1' },
+      { ticker: 'CVX', name: 'Chevron', action: 'Sell', shares: 8200000, value: '$1.3B', date: '2025-Q4' },
     ],
-    newPositions: ['CB', 'ULTA'],
-    reducedPositions: ['AAPL', 'CVX', 'HPQ'],
+    newPositions: ['ULTA', 'POOL'],
+    reducedPositions: ['AAPL', 'CVX'],
     sectorExposure: [
       { sector: 'Technology', weight: 43 }, { sector: 'Financials', weight: 28 },
       { sector: 'Consumer', weight: 14 }, { sector: 'Energy', weight: 10 },
@@ -38,14 +39,15 @@ export const mockInstitutions: Institution[] = [
       { ticker: 'GOOGL', name: 'Alphabet', weight: 3.4, shares: 638000000, value: '$113B', change: 1.8 },
     ],
     recentBuys: [
-      { ticker: 'NVDA', name: 'NVIDIA', action: 'Buy', shares: 42000000, value: '$5.8B', date: '2024-Q4' },
-      { ticker: 'AVGO', name: 'Broadcom', action: 'Buy', shares: 18000000, value: '$3.4B', date: '2024-Q4' },
+      { ticker: 'NVDA', name: 'NVIDIA', action: 'Buy', shares: 38000000, value: '$5.4B', date: '2026-Q1' },
+      { ticker: 'AVGO', name: 'Broadcom', action: 'Buy', shares: 14000000, value: '$3.1B', date: '2026-Q1' },
+      { ticker: 'MSFT', name: 'Microsoft', action: 'Buy', shares: 22000000, value: '$9.8B', date: '2025-Q4' },
     ],
     recentSells: [
-      { ticker: 'TSLA', name: 'Tesla', action: 'Sell', shares: 8000000, value: '$2.1B', date: '2024-Q4' },
+      { ticker: 'TSLA', name: 'Tesla', action: 'Sell', shares: 6200000, value: '$2.4B', date: '2026-Q1' },
     ],
-    newPositions: ['ARM', 'CRDO'],
-    reducedPositions: ['TSLA', 'DIS'],
+    newPositions: ['CRDO', 'SMCI'],
+    reducedPositions: ['TSLA'],
     sectorExposure: [
       { sector: 'Technology', weight: 32 }, { sector: 'Healthcare', weight: 14 },
       { sector: 'Financials', weight: 13 }, { sector: 'Consumer', weight: 12 },
@@ -64,15 +66,15 @@ export const mockInstitutions: Institution[] = [
       { ticker: 'PATH', name: 'UiPath', weight: 4.8, shares: 24000000, value: '$480M', change: -4.2 },
     ],
     recentBuys: [
-      { ticker: 'TSLA', name: 'Tesla', action: 'Buy', shares: 180000, value: '$46M', date: '2024-Q4' },
-      { ticker: 'PLTR', name: 'Palantir', action: 'Buy', shares: 420000, value: '$27M', date: '2024-Q4' },
-      { ticker: 'RKLB', name: 'Rocket Lab', action: 'Buy', shares: 1200000, value: '$24M', date: '2024-Q4' },
+      { ticker: 'TSLA', name: 'Tesla', action: 'Buy', shares: 220000, value: '$86M', date: '2026-Q1' },
+      { ticker: 'PLTR', name: 'Palantir', action: 'Buy', shares: 680000, value: '$72M', date: '2026-Q1' },
+      { ticker: 'RKLB', name: 'Rocket Lab', action: 'Buy', shares: 1400000, value: '$42M', date: '2025-Q4' },
     ],
     recentSells: [
-      { ticker: 'NVDA', name: 'NVIDIA', action: 'Sell', shares: 52000, value: '$7.2M', date: '2024-Q4' },
+      { ticker: 'COIN', name: 'Coinbase', action: 'Sell', shares: 380000, value: '$92M', date: '2026-Q1' },
     ],
     newPositions: ['OKLO', 'IONQ'],
-    reducedPositions: ['NVDA', 'SQ'],
+    reducedPositions: ['COIN', 'SQ'],
     sectorExposure: [
       { sector: 'Technology', weight: 42 }, { sector: 'Healthcare', weight: 18 },
       { sector: 'Fintech', weight: 15 }, { sector: 'Space', weight: 8 },
@@ -91,11 +93,11 @@ export const mockInstitutions: Institution[] = [
       { ticker: 'AVGO', name: 'Broadcom', weight: 1.8, shares: 5600000, value: '$1.0B', change: 22.4 },
     ],
     recentBuys: [
-      { ticker: 'NVDA', name: 'NVIDIA', action: 'Buy', shares: 3200000, value: '$444M', date: '2024-Q4' },
-      { ticker: 'AVGO', name: 'Broadcom', action: 'Buy', shares: 2800000, value: '$522M', date: '2024-Q4' },
+      { ticker: 'NVDA', name: 'NVIDIA', action: 'Buy', shares: 2800000, value: '$398M', date: '2026-Q1' },
+      { ticker: 'AVGO', name: 'Broadcom', action: 'Buy', shares: 3400000, value: '$756M', date: '2025-Q4' },
     ],
     recentSells: [
-      { ticker: 'NVO', name: 'Novo Nordisk', action: 'Sell', shares: 1800000, value: '$184M', date: '2024-Q4' },
+      { ticker: 'NVO', name: 'Novo Nordisk', action: 'Sell', shares: 2200000, value: '$218M', date: '2026-Q1' },
     ],
     newPositions: ['CRDO', 'VRT'],
     reducedPositions: ['NVO', 'ISRG'],
@@ -117,11 +119,11 @@ export const mockInstitutions: Institution[] = [
       { ticker: 'NVDA', name: 'NVIDIA', weight: 2.8, shares: 20000000, value: '$2.8B', change: 18.4 },
     ],
     recentBuys: [
-      { ticker: 'NVDA', name: 'NVIDIA', action: 'Buy', shares: 8400000, value: '$1.2B', date: '2024-Q4' },
-      { ticker: 'GOOGL', name: 'Alphabet', action: 'Buy', shares: 4200000, value: '$742M', date: '2024-Q4' },
+      { ticker: 'NVDA', name: 'NVIDIA', action: 'Buy', shares: 6800000, value: '$968M', date: '2026-Q1' },
+      { ticker: 'GOOGL', name: 'Alphabet', action: 'Buy', shares: 3800000, value: '$682M', date: '2025-Q4' },
     ],
     recentSells: [
-      { ticker: 'PG', name: 'Procter & Gamble', action: 'Sell', shares: 2400000, value: '$392M', date: '2024-Q4' },
+      { ticker: 'PG', name: 'Procter & Gamble', action: 'Sell', shares: 3200000, value: '$528M', date: '2026-Q1' },
     ],
     newPositions: ['PLTR'],
     reducedPositions: ['PG', 'JNJ', 'WMT'],
@@ -143,7 +145,8 @@ export const mockInstitutions: Institution[] = [
       { ticker: 'META', name: 'Meta', weight: 2.4, shares: 148000000, value: '$86B', change: 2.8 },
     ],
     recentBuys: [
-      { ticker: 'NVDA', name: 'NVIDIA', action: 'Buy', shares: 32000000, value: '$4.4B', date: '2024-Q4' },
+      { ticker: 'NVDA', name: 'NVIDIA', action: 'Buy', shares: 28000000, value: '$3.9B', date: '2026-Q1' },
+      { ticker: 'MSFT', name: 'Microsoft', action: 'Buy', shares: 18000000, value: '$8.2B', date: '2025-Q4' },
     ],
     recentSells: [],
     newPositions: [],
@@ -166,11 +169,11 @@ export const mockInstitutions: Institution[] = [
       { ticker: 'META', name: 'Meta', weight: 2.4, shares: 1200000, value: '$600M', change: 5.2 },
     ],
     recentBuys: [
-      { ticker: 'LLY', name: 'Eli Lilly', action: 'Buy', shares: 420000, value: '$245M', date: '2024-Q4' },
-      { ticker: 'NVDA', name: 'NVIDIA', action: 'Buy', shares: 1200000, value: '$166M', date: '2024-Q4' },
+      { ticker: 'LLY', name: 'Eli Lilly', action: 'Buy', shares: 380000, value: '$342M', date: '2026-Q1' },
+      { ticker: 'NVDA', name: 'NVIDIA', action: 'Buy', shares: 1400000, value: '$199M', date: '2025-Q4' },
     ],
     recentSells: [
-      { ticker: 'TSLA', name: 'Tesla', action: 'Exit', shares: 800000, value: '$207M', date: '2024-Q4' },
+      { ticker: 'TSLA', name: 'Tesla', action: 'Exit', shares: 420000, value: '$164M', date: '2025-Q4' },
     ],
     newPositions: ['PLTR', 'CRWD'],
     reducedPositions: ['TSLA'],
@@ -192,11 +195,11 @@ export const mockInstitutions: Institution[] = [
       { ticker: 'CEG', name: 'Constellation Energy', weight: 3.8, shares: 520000, value: '$132M', change: 22.1 },
     ],
     recentBuys: [
-      { ticker: 'CEG', name: 'Constellation Energy', action: 'Buy', shares: 320000, value: '$82M', date: '2024-Q4' },
-      { ticker: 'VST', name: 'Vistra', action: 'Buy', shares: 480000, value: '$62M', date: '2024-Q4' },
+      { ticker: 'CEG', name: 'Constellation Energy', action: 'Buy', shares: 280000, value: '$78M', date: '2026-Q1' },
+      { ticker: 'VST', name: 'Vistra', action: 'Buy', shares: 520000, value: '$72M', date: '2025-Q4' },
     ],
     recentSells: [
-      { ticker: 'GOOGL', name: 'Alphabet', action: 'Sell', shares: 180000, value: '$32M', date: '2024-Q4' },
+      { ticker: 'GOOGL', name: 'Alphabet', action: 'Sell', shares: 240000, value: '$44M', date: '2026-Q1' },
     ],
     newPositions: ['VST', 'SMR'],
     reducedPositions: ['GOOGL', 'META'],
@@ -218,11 +221,11 @@ export const mockInstitutions: Institution[] = [
       { ticker: 'UBER', name: 'Uber', weight: 8.8, shares: 16000000, value: '$1.3B', change: 6.2 },
     ],
     recentBuys: [
-      { ticker: 'UBER', name: 'Uber', action: 'Buy', shares: 16000000, value: '$1.3B', date: '2024-Q4' },
-      { ticker: 'BN', name: 'Brookfield', action: 'Buy', shares: 8200000, value: '$480M', date: '2024-Q4' },
+      { ticker: 'UBER', name: 'Uber', action: 'Buy', shares: 8400000, value: '$728M', date: '2025-Q4' },
+      { ticker: 'BN', name: 'Brookfield', action: 'Buy', shares: 6200000, value: '$412M', date: '2026-Q1' },
     ],
     recentSells: [
-      { ticker: 'LOW', name: 'Lowe\'s', action: 'Exit', shares: 5200000, value: '$1.4B', date: '2024-Q4' },
+      { ticker: 'LOW', name: "Lowe's", action: 'Exit', shares: 5200000, value: '$1.4B', date: '2025-Q4' },
     ],
     newPositions: ['UBER', 'BN'],
     reducedPositions: ['LOW'],
@@ -244,10 +247,10 @@ export const mockInstitutions: Institution[] = [
       { ticker: 'F', name: 'Ford', weight: 3.2, shares: 45000000, value: '$545M', change: -8.2 },
     ],
     recentBuys: [
-      { ticker: 'CVX', name: 'Chevron', action: 'Buy', shares: 4200000, value: '$672M', date: '2024-Q4' },
+      { ticker: 'CVX', name: 'Chevron', action: 'Buy', shares: 3800000, value: '$618M', date: '2026-Q1' },
     ],
     recentSells: [
-      { ticker: 'BMY', name: 'Bristol-Myers', action: 'Sell', shares: 1800000, value: '$90M', date: '2024-Q4' },
+      { ticker: 'BMY', name: 'Bristol-Myers', action: 'Sell', shares: 2200000, value: '$112M', date: '2025-Q4' },
     ],
     newPositions: [],
     reducedPositions: ['BMY'],
@@ -269,10 +272,10 @@ export const mockInstitutions: Institution[] = [
       { ticker: 'CEIX', name: 'CONSOL Energy', weight: 4.2, shares: 1200000, value: '$134M', change: -2.1 },
     ],
     recentBuys: [
-      { ticker: 'GPRE', name: 'Green Plains', action: 'Buy', shares: 1800000, value: '$115M', date: '2024-Q4' },
+      { ticker: 'GPRE', name: 'Green Plains', action: 'Buy', shares: 2200000, value: '$142M', date: '2026-Q1' },
     ],
     recentSells: [
-      { ticker: 'TWLO', name: 'Twilio', action: 'Exit', shares: 620000, value: '$42M', date: '2024-Q4' },
+      { ticker: 'TWLO', name: 'Twilio', action: 'Exit', shares: 820000, value: '$68M', date: '2025-Q4' },
     ],
     newPositions: [],
     reducedPositions: ['TWLO'],
@@ -294,11 +297,11 @@ export const mockInstitutions: Institution[] = [
       { ticker: 'NVDA', name: 'NVIDIA', weight: 5.2, shares: 4800000, value: '$676M', change: 14.2 },
     ],
     recentBuys: [
-      { ticker: 'NVDA', name: 'NVIDIA', action: 'Buy', shares: 2400000, value: '$333M', date: '2024-Q4' },
-      { ticker: 'BABA', name: 'Alibaba', action: 'Buy', shares: 3800000, value: '$342M', date: '2024-Q4' },
+      { ticker: 'NVDA', name: 'NVIDIA', action: 'Buy', shares: 2800000, value: '$398M', date: '2026-Q1' },
+      { ticker: 'BABA', name: 'Alibaba', action: 'Buy', shares: 4200000, value: '$462M', date: '2025-Q4' },
     ],
     recentSells: [
-      { ticker: 'AMD', name: 'AMD', action: 'Sell', shares: 1200000, value: '$174M', date: '2024-Q4' },
+      { ticker: 'AMD', name: 'AMD', action: 'Sell', shares: 1800000, value: '$248M', date: '2026-Q1' },
     ],
     newPositions: ['BABA'],
     reducedPositions: ['AMD'],
@@ -320,11 +323,11 @@ export const mockInstitutions: Institution[] = [
       { ticker: 'AVGO', name: 'Broadcom', weight: 3.6, shares: 8800000, value: '$1.7B', change: 18.2 },
     ],
     recentBuys: [
-      { ticker: 'NVDA', name: 'NVIDIA', action: 'Buy', shares: 8200000, value: '$1.1B', date: '2024-Q4' },
-      { ticker: 'NOW', name: 'ServiceNow', action: 'Buy', shares: 1800000, value: '$1.6B', date: '2024-Q4' },
+      { ticker: 'NVDA', name: 'NVIDIA', action: 'Buy', shares: 9200000, value: '$1.3B', date: '2026-Q1' },
+      { ticker: 'NOW', name: 'ServiceNow', action: 'Buy', shares: 2200000, value: '$2.1B', date: '2025-Q4' },
     ],
     recentSells: [
-      { ticker: 'AAPL', name: 'Apple', action: 'Sell', shares: 2800000, value: '$555M', date: '2024-Q4' },
+      { ticker: 'AAPL', name: 'Apple', action: 'Sell', shares: 3400000, value: '$742M', date: '2026-Q1' },
     ],
     newPositions: ['ARM', 'PANW'],
     reducedPositions: ['AAPL', 'CRM'],
@@ -337,7 +340,7 @@ export const mockInstitutions: Institution[] = [
     description: 'Philippe Laffont\'s tech-focused hedge fund. Deep Silicon Valley connections. Among the most aggressive AI infrastructure investors.',
   },
   {
-    id: 'tiger', name: 'Tiger Global', type: 'Hedge Fund', aum: '$28B',
+    id: 'tiger', name: 'Tiger Global Management', type: 'Hedge Fund', aum: '$28B',
     topHoldings: [
       { ticker: 'MSFT', name: 'Microsoft', weight: 14.2, shares: 9800000, value: '$4.1B', change: 2.4 },
       { ticker: 'META', name: 'Meta', weight: 8.4, shares: 5200000, value: '$2.4B', change: 5.2 },
@@ -346,11 +349,11 @@ export const mockInstitutions: Institution[] = [
       { ticker: 'CRM', name: 'Salesforce', weight: 4.2, shares: 3800000, value: '$1.2B', change: -2.4 },
     ],
     recentBuys: [
-      { ticker: 'CRWD', name: 'CrowdStrike', action: 'Buy', shares: 2400000, value: '$842M', date: '2024-Q4' },
-      { ticker: 'SNOW', name: 'Snowflake', action: 'Buy', shares: 3200000, value: '$518M', date: '2024-Q4' },
+      { ticker: 'CRWD', name: 'CrowdStrike', action: 'Buy', shares: 2800000, value: '$1.1B', date: '2026-Q1' },
+      { ticker: 'SNOW', name: 'Snowflake', action: 'Buy', shares: 3600000, value: '$624M', date: '2025-Q4' },
     ],
     recentSells: [
-      { ticker: 'CRM', name: 'Salesforce', action: 'Sell', shares: 1200000, value: '$342M', date: '2024-Q4' },
+      { ticker: 'CRM', name: 'Salesforce', action: 'Sell', shares: 1800000, value: '$542M', date: '2026-Q1' },
     ],
     newPositions: ['CRWD'],
     reducedPositions: ['CRM', 'UBER'],
@@ -372,8 +375,8 @@ export const mockInstitutions: Institution[] = [
       { ticker: 'CRM', name: 'Salesforce', weight: 2.8, shares: 6200000, value: '$1.8B', change: 3.8 },
     ],
     recentBuys: [
-      { ticker: 'TXN', name: 'Texas Instruments', action: 'Buy', shares: 8400000, value: '$1.8B', date: '2024-Q4' },
-      { ticker: 'HPE', name: 'Hewlett Packard Enterprise', action: 'Buy', shares: 42000000, value: '$920M', date: '2024-Q4' },
+      { ticker: 'TXN', name: 'Texas Instruments', action: 'Buy', shares: 6200000, value: '$1.4B', date: '2026-Q1' },
+      { ticker: 'HPE', name: 'Hewlett Packard Enterprise', action: 'Buy', shares: 38000000, value: '$842M', date: '2025-Q4' },
     ],
     recentSells: [],
     newPositions: ['TXN', 'HPE'],
@@ -396,11 +399,11 @@ export const mockInstitutions: Institution[] = [
       { ticker: 'META', name: 'Meta', weight: 2.4, shares: 3200000, value: '$1.5B', change: 5.2 },
     ],
     recentBuys: [
-      { ticker: 'AVGO', name: 'Broadcom', action: 'Buy', shares: 4200000, value: '$784M', date: '2024-Q4' },
-      { ticker: 'PLTR', name: 'Palantir', action: 'Buy', shares: 12000000, value: '$780M', date: '2024-Q4' },
+      { ticker: 'AVGO', name: 'Broadcom', action: 'Buy', shares: 3800000, value: '$844M', date: '2026-Q1' },
+      { ticker: 'PLTR', name: 'Palantir', action: 'Buy', shares: 14000000, value: '$1.5B', date: '2026-Q1' },
     ],
     recentSells: [
-      { ticker: 'TSLA', name: 'Tesla', action: 'Sell', shares: 3200000, value: '$828M', date: '2024-Q4' },
+      { ticker: 'TSLA', name: 'Tesla', action: 'Sell', shares: 4200000, value: '$1.6B', date: '2025-Q4' },
     ],
     newPositions: ['PLTR'],
     reducedPositions: ['TSLA'],

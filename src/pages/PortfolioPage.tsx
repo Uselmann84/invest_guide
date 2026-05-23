@@ -1,14 +1,15 @@
-import React, { useState, useMemo, useCallback, useEffect } from 'react';
+import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { StockHolding, RsuGrant, TaxSettings, Timeframe } from '../models/types';
 import { portfolioService } from '../services/portfolioService';
 import { useMarketData } from '../components/MarketDataContext';
 import { marketDataService } from '../services/marketDataService';
 import { yahooFinance } from '../services/yahooFinance';
-import { SectionHeader, TabBar, ChangeIndicator } from '../components/SharedComponents';
+import { SectionHeader, TabBar, ChangeIndicator, Disclaimer } from '../components/SharedComponents';
 import { CompanyDetail } from './StocksPage';
 import { Company } from '../models/types';
 import { AreaChart, Area, XAxis, YAxis, ResponsiveContainer, Tooltip, ReferenceLine, CartesianGrid } from 'recharts';
 import SimulatorPage from './SimulatorPage';
+import VirtualPortfolioPanel from './VirtualPortfolioPanel';
 
 function fmt(n: number): string {
   return n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -349,6 +350,7 @@ export default function PortfolioPage() {
   const [showAddRsu, setShowAddRsu] = useState(false);
   const [selectedRsu, setSelectedRsu] = useState<RsuGrant | null>(null);
   const [selectedCompany, setSelectedCompany] = useState<Company | null>(null);
+  const scrollPosRef = useRef(0);
   const [view, setView] = useState('overview');
   const [chartTf, setChartTf] = useState<Timeframe>('1M');
   const [chartMode, setChartMode] = useState<'value' | 'profit'>('value');
@@ -537,7 +539,7 @@ export default function PortfolioPage() {
       setChartLoading(false);
     })();
     return () => { cancelled = true; };
-  }, [allTickers, chartTf, holdings, rsus]);   if (selectedCompany) return <CompanyDetail company={selectedCompany} onClose={() => setSelectedCompany(null)} />;
+  }, [allTickers, chartTf, holdings, rsus]);   if (selectedCompany) return <CompanyDetail company={selectedCompany} onClose={() => { setSelectedCompany(null); requestAnimationFrame(() => window.scrollTo(0, scrollPosRef.current)); }} />;
   if (selectedRsu) return <RsuDetail grant={selectedRsu} currentPrice={getPrice(selectedRsu.ticker)} tax={tax} onClose={() => setSelectedRsu(null)} />;
 
   return (
@@ -551,10 +553,13 @@ export default function PortfolioPage() {
       </div>
 
       <TabBar
-        tabs={[{ id: 'overview', label: 'Overview' }, { id: 'stocks', label: 'Stocks' }, { id: 'rsus', label: 'RSUs' }, { id: 'tax', label: 'Tax' }, { id: 'sim', label: 'Simulator' }]}
+        tabs={[{ id: 'overview', label: 'Overview' }, { id: 'stocks', label: 'Stocks' }, { id: 'rsus', label: 'RSUs' }, { id: 'tax', label: 'Tax' }, { id: 'sim', label: 'Simulator' }, { id: 'virtual', label: 'Virtual' }]}
         active={view}
         onChange={setView}
       />
+
+      {/* ---- VIRTUAL PORTFOLIO ---- */}
+      {view === 'virtual' && <VirtualPortfolioPanel />}
 
       {/* ---- SIMULATOR ---- */}
       {view === 'sim' && <SimulatorPage />}
@@ -717,7 +722,7 @@ export default function PortfolioPage() {
                   const dailyChgPct = co?.changePercent ?? 0;
                   return (
                     <button key={h.id} onClick={() => {
-                      if (co) setSelectedCompany(co);
+                      if (co) { scrollPosRef.current = window.scrollY; setSelectedCompany(co); }
                     }} className="card w-full text-left px-4 py-3 flex items-center gap-3 active:scale-[0.98] transition-transform">
                       <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-accent-500/20 to-accent-500/5 flex items-center justify-center text-xs font-bold text-accent-400 shrink-0">
                         {h.ticker.slice(0, 2)}
@@ -826,7 +831,7 @@ export default function PortfolioPage() {
               <div key={h.id} className="card p-4">
                 <div className="flex items-center justify-between mb-2">
                   <button onClick={() => {
-                    if (co) setSelectedCompany(co);
+                    if (co) { scrollPosRef.current = window.scrollY; setSelectedCompany(co); }
                   }} className="text-left">
                     <span className="text-sm font-bold text-accent-400">{h.ticker}</span>
                     <span className="text-xs text-gray-500 ml-2">{h.name}</span>
@@ -1029,6 +1034,8 @@ export default function PortfolioPage() {
           )}
         </div>
       )}
+
+      <Disclaimer />
     </div>
   );
 }
