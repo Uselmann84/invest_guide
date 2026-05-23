@@ -93,7 +93,7 @@ export interface TechTrend {
 export interface Institution {
   id: string;
   name: string;
-  type: 'Hedge Fund' | 'Asset Manager' | 'Conglomerate' | 'ETF Issuer' | 'Individual';
+  type: 'Hedge Fund' | 'Asset Manager' | 'Conglomerate' | 'ETF Issuer' | 'Individual' | 'Family Office' | 'Activist Investor';
   aum: string;
   topHoldings: InstitutionHolding[];
   recentBuys: InstitutionTrade[];

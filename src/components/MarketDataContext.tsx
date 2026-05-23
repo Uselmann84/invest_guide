@@ -94,16 +94,36 @@ export function MarketDataProvider({ children }: { children: React.ReactNode }) 
     } catch { /* ignore corrupt data */ }
     const storedTrends = marketDataService.getPersistedTrends();
     if (storedTrends) {
-      // Deduplicate by name (case-insensitive)
+      // Deduplicate by normalized name and require icon
       const seen = new Set<string>();
       const deduped = storedTrends.trends.filter(t => {
-        const key = t.name?.toLowerCase();
+        if (!t.icon) return false;
+        const key = t.name?.toLowerCase().replace(/[^a-z0-9]/g, '');
         if (seen.has(key)) return false;
         seen.add(key);
         return true;
       });
       setTrends(deduped);
       setTrendsGeneratedAt(storedTrends.generatedAt);
+
+      // Fetch data for any tickers not in the static database
+      const allTickers = new Set<string>();
+      deduped.forEach(t => {
+        (t.keyCompanies || []).forEach(tk => allTickers.add(tk));
+        (t.emergingCompanies || []).forEach(tk => allTickers.add(tk));
+      });
+      const knownTickers = new Set(mockCompanies.map(c => c.ticker));
+      const unknownTickers = [...allTickers].filter(t => !knownTickers.has(t));
+      if (unknownTickers.length > 0) {
+        marketDataService.fetchNewCompanies(unknownTickers).then(newCompanies => {
+          if (newCompanies.length > 0) {
+            setCompanies(prev => {
+              const existing = new Set(prev.map(c => c.ticker));
+              return [...prev, ...newCompanies.filter(c => !existing.has(c.ticker))];
+            });
+          }
+        }).catch(() => {});
+      }
     }
   }, []);
 
@@ -202,6 +222,22 @@ export function MarketDataProvider({ children }: { children: React.ReactNode }) 
       if (trendsResult.status === 'fulfilled') {
         setTrends(trendsResult.value.trends);
         setTrendsGeneratedAt(trendsResult.value.generatedAt);
+
+        // Fetch data for any new tickers the AI introduced
+        if (trendsResult.value.newTickers.length > 0) {
+          const existingTickers = new Set(companies.map(c => c.ticker));
+          const unknownTickers = trendsResult.value.newTickers.filter(t => !existingTickers.has(t));
+          if (unknownTickers.length > 0) {
+            marketDataService.fetchNewCompanies(unknownTickers).then(newCompanies => {
+              if (newCompanies.length > 0) {
+                setCompanies(prev => {
+                  const existing = new Set(prev.map(c => c.ticker));
+                  return [...prev, ...newCompanies.filter(c => !existing.has(c.ticker))];
+                });
+              }
+            }).catch(() => { /* non-critical */ });
+          }
+        }
       }
 
       // Report status

@@ -288,6 +288,44 @@ export const marketDataService = {
     }
   },
 
+  // Create a Company from Yahoo Finance data for tickers not in our database
+  async fetchNewCompanies(tickers: string[]): Promise<Company[]> {
+    const results: Company[] = [];
+    await Promise.all(tickers.map(async (ticker) => {
+      try {
+        const p = await yahooFinance.getProfile(ticker);
+        if (!p.price || !p.name) return;
+        const sparkline = Array.from({ length: 30 }, (_, i) => {
+          const base = p.price! * (1 - (p.changePercent ?? 0) / 100 * (30 - i) / 30);
+          return base + (Math.random() - 0.5) * p.price! * 0.002;
+        });
+        results.push({
+          ticker,
+          name: p.name ?? ticker,
+          sector: p.sector ?? 'Technology',
+          industry: p.industry ?? 'Unknown',
+          marketCap: p.marketCap ?? 0,
+          marketCapLabel: p.marketCapLabel ?? 'N/A',
+          price: p.price,
+          change: p.change ?? 0,
+          changePercent: p.changePercent ?? 0,
+          revenueGrowth: p.revenueGrowth ?? 0,
+          profitMargin: p.profitMargin ?? 0,
+          debtToEquity: p.debtToEquity ?? 0,
+          analystSentiment: 'Hold',
+          institutionalOwnership: 50,
+          insiderActivity: 'Neutral',
+          relativeStrength: 50,
+          aiTrendConnection: [],
+          sparkline,
+          scores: { momentum: 50, fundamental: 50, valuation: 50, institutionalInterest: 50, technologyExposure: 50, marketDemand: 50, risk: 50, opportunity: 50, userFit: 50, overall: 50 },
+          summary: p.summary ?? `${p.name} (${ticker})`,
+        });
+      } catch { /* skip failed tickers */ }
+    }));
+    return results;
+  },
+
   // Fetch index chart from Yahoo Finance
   async fetchIndexHistory(indexSymbol: string, timeframe: Timeframe): Promise<PricePoint[]> {
     try {
@@ -459,7 +497,7 @@ CRITICAL: The summary value must be a valid JSON string. Use \\n for newlines, N
     return null;
   },
 
-  async fetchTrendsAnalysis(currentTrends: TechTrend[]): Promise<{ trends: TechTrend[]; generatedAt: number }> {
+  async fetchTrendsAnalysis(currentTrends: TechTrend[]): Promise<{ trends: TechTrend[]; generatedAt: number; newTickers: string[] }> {
     if (!isLive()) throw new Error('API key required for AI analysis');
 
     const prefs = userPreferenceService.getPreferences();
@@ -467,7 +505,7 @@ CRITICAL: The summary value must be a valid JSON string. Use \\n for newlines, N
 
     const prompt = `Update scores for these tech trends based on current market: ${trendNames}.
 
-For each, return: id, scores (0-100: momentumScore, marketDemandScore, investmentAttentionScore, publicHypeScore, realRevenueImpactScore), keyCompanies (5 tickers), emergingCompanies (3 tickers), risks (3 short items), description (1 sentence).
+For each, return: id, scores (0-100: momentumScore, marketDemandScore, investmentAttentionScore, publicHypeScore, realRevenueImpactScore), keyCompanies (5 US stock tickers), emergingCompanies (3 US stock tickers), risks (3 short items), description (1 sentence).
 
 Keep longTermImpact and historicalComparison unchanged. Return ONLY valid JSON, no newlines in string values.
 Format: {"trends":[{"id":"ai","momentumScore":N,...}]}`;
@@ -496,22 +534,34 @@ Format: {"trends":[{"id":"ai","momentumScore":N,...}]}`;
 
     if (!parsed?.trends?.length) throw new Error('AI response missing trends data');
 
+    const normalize = (s: string) => s?.toLowerCase().replace(/[^a-z0-9]/g, '') || '';
+    const knownTickers = new Set(mockCompanies.map(c => c.ticker));
+    const newTickers = new Set<string>();
+
+    // Collect all tickers from AI response and find new ones
+    const collectNew = (arr: string[]) => (arr || []).forEach(t => { if (!knownTickers.has(t)) newTickers.add(t); });
+
     // Merge AI data with existing trends (keep any fields AI didn't return)
     const updatedTrends: TechTrend[] = currentTrends.map(existing => {
-      const ai = parsed.trends.find((t: any) => t.id === existing.id || t.name?.toLowerCase() === existing.name?.toLowerCase());
+      const ai = parsed.trends.find((t: any) => t.id === existing.id || normalize(t.name) === normalize(existing.name));
       if (!ai) return existing;
-      return { ...existing, ...ai, id: existing.id, icon: ai.icon || existing.icon };
+      const merged = { ...existing, ...ai, id: existing.id, name: existing.name, icon: ai.icon || existing.icon };
+      collectNew(merged.keyCompanies);
+      collectNew(merged.emergingCompanies);
+      return merged;
     });
 
-    // Add any new trends from AI that don't exist in current list (dedupe by name)
+    // Add any new trends from AI that don't exist in current list (dedupe by normalized name)
     parsed.trends.forEach((ai: any) => {
-      if (!updatedTrends.find(t => t.id === ai.id || t.name?.toLowerCase() === ai.name?.toLowerCase())) {
+      if (ai.icon && ai.name && !updatedTrends.find(t => t.id === ai.id || normalize(t.name) === normalize(ai.name))) {
+        collectNew(ai.keyCompanies);
+        collectNew(ai.emergingCompanies);
         updatedTrends.push(ai);
       }
     });
 
     const now = Date.now();
-    const result = { trends: updatedTrends, generatedAt: now };
+    const result = { trends: updatedTrends, generatedAt: now, newTickers: [...newTickers] };
     try { localStorage.setItem(TRENDS_PERSIST_KEY, JSON.stringify(result)); } catch { /* full */ }
     return result;
   },

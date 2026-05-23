@@ -563,7 +563,7 @@ export default function DashboardPage() {
       </div>
 
       <Disclaimer />
-      <p className="text-[9px] text-gray-700 text-center pb-2">v1.1.0</p>
+      <p className="text-[9px] text-gray-700 text-center pb-2">v1.1.1</p>
     </div>
   );
 }
