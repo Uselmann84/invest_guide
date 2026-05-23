@@ -104,17 +104,13 @@ export function SectionHeader({ title, action, onAction }: { title: string; acti
   );
 }
 
-export const APP_VERSION = 'v1.2.0';
+export const APP_VERSION = 'v1.2.1';
 
 export function Disclaimer() {
   return (
-    <div>
-      <div className="bg-amber-500/5 border border-amber-500/20 rounded-xl p-3 text-xs text-amber-400/80 leading-relaxed">
-        ⚠️ This is not financial advice. All outputs are research-based estimates and simulations.
-        Past performance does not guarantee future results. Data may be delayed or incomplete.
-      </div>
-      <p className="text-[9px] text-gray-700 text-center pt-2 pb-2">{APP_VERSION}</p>
-    </div>
+    <p className="text-[9px] text-gray-600 text-center leading-snug py-3 px-4">
+      Not financial advice · Estimates only · Past performance ≠ future results · {APP_VERSION}
+    </p>
   );
 }
 
