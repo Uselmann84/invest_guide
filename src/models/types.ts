@@ -185,7 +185,7 @@ export interface UserPreferences {
 }
 
 // ---- Pricing / Historical ----
-export type Timeframe = '1D' | '1W' | '1M' | '6M' | '1Y' | '5Y' | 'ALL';
+export type Timeframe = '1D' | '1W' | '1M' | '6M' | '1Y' | '5Y' | '10Y' | 'ALL';
 
 export interface PricePoint {
   date: string; // ISO or label depending on timeframe
@@ -199,7 +199,7 @@ export interface ScenarioParams {
   interestRateShock: number;    // basis points
   inflationShock: number;       // %
   techMultiplier: number;       // 0.5 .. 2.0
-  durationMonths: number;       // 1 .. 60
+  durationMonths: number;       // 1 .. 120
 }
 
 export interface ScoreWeights {
@@ -279,4 +279,4 @@ export interface TaxSettings {
 }
 
 // ---- Navigation ----
-export type TabId = 'home' | 'trends' | 'stocks' | 'institutions' | 'portfolio' | 'simulator' | 'agent' | 'settings';
+export type TabId = 'home' | 'trends' | 'stocks' | 'institutions' | 'portfolio' | 'agent' | 'settings';

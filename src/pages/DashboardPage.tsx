@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { useMarketData } from '../components/MarketDataContext';
 import { IndexData, Company, Timeframe, PricePoint } from '../models/types';
 import { ChangeIndicator, MiniSparkline, SentimentGauge, SectionHeader, Disclaimer, TabBar } from '../components/SharedComponents';
@@ -26,6 +26,7 @@ function IndexDetail({ index, onClose }: { index: IndexData; onClose: () => void
   const [timeframe, setTimeframe] = useState<Timeframe>('1M');
   const [priceData, setPriceData] = useState<PricePoint[]>([]);
   const [loading, setLoading] = useState(false);
+  const [tilePerfs, setTilePerfs] = useState<Record<string, number | null>>({});
 
   // Generate chart data from sparkline or fetch from Yahoo Finance
   const chartData = useMemo(() => {
@@ -47,12 +48,34 @@ function IndexDetail({ index, onClose }: { index: IndexData; onClose: () => void
     return () => { cancelled = true; };
   }, [timeframe, fetchIndexHistory, index.symbol]);
 
+  // Fetch performance for all tile timeframes
+  useEffect(() => {
+    const tfs: Timeframe[] = ['1D', '1W', '1M', '6M', '1Y', '5Y'];
+    tfs.forEach(tf => {
+      fetchIndexHistory(index.symbol, tf).then(data => {
+        if (data.length >= 2) {
+          const first = data[0].value;
+          const last = data[data.length - 1].value;
+          setTilePerfs(prev => ({ ...prev, [tf]: Math.round(((last - first) / first) * 10000) / 100 }));
+        }
+      });
+    });
+  }, [fetchIndexHistory, index.symbol]);
+
   const perf = index.performance;
   const tfPerf: Record<Timeframe, number> = {
     '1D': perf.daily, '1W': perf.weekly, '1M': perf.monthly,
-    '6M': perf.sixMonth, '1Y': perf.yearly, '5Y': perf.fiveYear, 'ALL': perf.fiveYear,
+    '6M': perf.sixMonth, '1Y': perf.yearly, '5Y': perf.fiveYear, '10Y': perf.fiveYear, 'ALL': perf.fiveYear,
   };
-  const currentPerf = tfPerf[timeframe];
+  // Compute performance from actual chart data when available
+  const currentPerf = useMemo(() => {
+    if (priceData.length >= 2) {
+      const first = priceData[0].value;
+      const last = priceData[priceData.length - 1].value;
+      return Math.round(((last - first) / first) * 10000) / 100;
+    }
+    return tfPerf[timeframe];
+  }, [priceData, tfPerf, timeframe]);
   const chartColor = currentPerf >= 0 ? '#10b981' : '#ef4444';
 
   return (
@@ -67,7 +90,7 @@ function IndexDetail({ index, onClose }: { index: IndexData; onClose: () => void
           </div>
           <div className="text-right">
             <p className="text-xl font-bold">{index.value.toLocaleString(undefined, { maximumFractionDigits: 2 })}</p>
-            <ChangeIndicator value={index.changePercent} />
+            <ChangeIndicator value={currentPerf} />
           </div>
         </div>
 
@@ -124,14 +147,17 @@ function IndexDetail({ index, onClose }: { index: IndexData; onClose: () => void
         {/* Performance Grid */}
         <div className="grid grid-cols-3 gap-2 mb-4">
           {([['1D', perf.daily], ['1W', perf.weekly], ['1M', perf.monthly],
-             ['6M', perf.sixMonth], ['1Y', perf.yearly], ['5Y', perf.fiveYear]] as [string, number][]).map(([label, val]) => (
+             ['6M', perf.sixMonth], ['1Y', perf.yearly], ['5Y', perf.fiveYear]] as [string, number][]).map(([label, fallback]) => {
+            const val = tilePerfs[label] ?? fallback;
+            return (
             <div key={label} className="card-compact p-3 text-center">
               <p className="text-[10px] text-gray-500">{label}</p>
               <p className={`text-sm font-semibold ${val >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
                 {val >= 0 ? '+' : ''}{val.toFixed(2)}%
               </p>
             </div>
-          ))}
+            );
+          })}
         </div>
       </div>
     </div>
@@ -139,7 +165,7 @@ function IndexDetail({ index, onClose }: { index: IndexData; onClose: () => void
 }
 
 export default function DashboardPage() {
-  const { indexes, companies, sectors, sentiment, macroRisk, summary, heatmap, isLive, isLoading, dataSource, fetchIndexHistory, fetchHistory } = useMarketData();
+  const { indexes, companies, sectors, sentiment, macroRisk, summary, heatmap, isLive, isLoading, aiStatus, aiGeneratedAt, dataSource, fetchIndexHistory, fetchHistory, runAiAnalysis, runDataSummary } = useMarketData();
   const [perfPeriod, setPerfPeriod] = useState<Timeframe>(() => (localStorage.getItem('dash_indexPeriod') as Timeframe) || '1M');
   const [stockPeriod, setStockPeriod] = useState<Timeframe>(() => (localStorage.getItem('dash_stockPeriod') as Timeframe) || '1M');
   const [selectedIndex, setSelectedIndex] = useState<IndexData | null>(null);
@@ -147,6 +173,11 @@ export default function DashboardPage() {
   const handleSetPerfPeriod = (t: Timeframe) => { setPerfPeriod(t); localStorage.setItem('dash_indexPeriod', t); };
   const handleSetStockPeriod = (t: Timeframe) => { setStockPeriod(t); localStorage.setItem('dash_stockPeriod', t); };
   const [selectedStock, setSelectedStock] = useState<Company | null>(null);
+  const scrollPosRef = useRef(0);
+  const openStock = useCallback((c: Company) => { scrollPosRef.current = window.scrollY; setSelectedStock(c); }, []);
+  const closeStock = useCallback(() => { setSelectedStock(null); requestAnimationFrame(() => window.scrollTo(0, scrollPosRef.current)); }, []);
+  const openIndex = useCallback((idx: IndexData) => { scrollPosRef.current = window.scrollY; setSelectedIndex(idx); }, []);
+  const closeIndex = useCallback(() => { setSelectedIndex(null); requestAnimationFrame(() => window.scrollTo(0, scrollPosRef.current)); }, []);
   const [indexCharts, setIndexCharts] = useState<Record<string, PricePoint[]>>({});
   const [stockCharts, setStockCharts] = useState<Record<string, PricePoint[]>>({});
   const [chartsLoading, setChartsLoading] = useState(false);
@@ -203,8 +234,53 @@ export default function DashboardPage() {
     return () => { cancelled = true; };
   }, [stockPeriod, topStocks, fetchHistory]);
 
-  if (selectedIndex) return <IndexDetail index={selectedIndex} onClose={() => setSelectedIndex(null)} />;
-  if (selectedStock) return <CompanyDetail company={selectedStock} onClose={() => setSelectedStock(null)} />;
+  // Known tickers from companies list for linking
+  const tickerSet = useMemo(() => new Set(companies.map(c => c.ticker)), [companies]);
+
+  // Render text segment with **bold** and ticker links
+  const renderTextWithLinks = useCallback((text: string) => {
+    // Split by **bold** first
+    const boldParts = text.split('**');
+    return boldParts.map((part, i) => {
+      if (i % 2 === 1) {
+        // Bold segment — check if it's a known ticker
+        const upperPart = part.toUpperCase();
+        const matchedCompany = companies.find(c => c.ticker === upperPart);
+        if (matchedCompany) {
+          return (
+            <button key={i} className="font-bold text-accent-400 underline underline-offset-2" onClick={() => openStock(matchedCompany)}>
+              {part}
+            </button>
+          );
+        }
+        return <strong key={i} className="text-white">{part}</strong>;
+      }
+      // Regular text — also scan for standalone tickers (e.g. AAPL, MSFT)
+      const tickerRegex = /\b([A-Z]{1,5})\b/g;
+      const segments: React.ReactNode[] = [];
+      let lastIdx = 0;
+      let match;
+      while ((match = tickerRegex.exec(part)) !== null) {
+        const ticker = match[1];
+        const company = companies.find(c => c.ticker === ticker);
+        if (company) {
+          if (match.index > lastIdx) segments.push(<span key={`t${lastIdx}`}>{part.slice(lastIdx, match.index)}</span>);
+          segments.push(
+            <button key={`l${match.index}`} className="text-accent-400 underline underline-offset-2" onClick={() => openStock(company)}>
+              {ticker}
+            </button>
+          );
+          lastIdx = match.index + ticker.length;
+        }
+      }
+      if (segments.length === 0) return <span key={i}>{part}</span>;
+      if (lastIdx < part.length) segments.push(<span key={`t${lastIdx}`}>{part.slice(lastIdx)}</span>);
+      return <span key={i}>{segments}</span>;
+    });
+  }, [companies]);
+
+  if (selectedIndex) return <IndexDetail index={selectedIndex} onClose={closeIndex} />;
+  if (selectedStock) return <CompanyDetail company={selectedStock} onClose={closeStock} />;
 
   return (
     <div className="space-y-4">
@@ -273,7 +349,7 @@ export default function DashboardPage() {
             return (
               <button
                 key={idx.symbol}
-                onClick={() => setSelectedIndex(idx)}
+                onClick={() => openIndex(idx)}
                 className="card p-4 w-full text-left active:scale-[0.98] transition-transform"
               >
                 <div className="flex items-center justify-between mb-2">
@@ -378,7 +454,7 @@ export default function DashboardPage() {
             return (
               <button
                 key={c.ticker}
-                onClick={() => setSelectedStock(c)}
+                onClick={() => openStock(c)}
                 className="card-compact p-3 flex items-center gap-3 w-full text-left active:scale-[0.98] transition-transform"
               >
                 <div className="w-6 h-6 rounded-full bg-accent-500/20 flex items-center justify-center text-xs font-bold text-accent-400">
@@ -406,20 +482,88 @@ export default function DashboardPage() {
 
       {/* AI Summary */}
       <div>
-        <SectionHeader title="AI Market Brief" />
+        <div className="flex items-center justify-between mb-1">
+          <SectionHeader title="AI Market Brief" />
+          <div className="flex gap-1.5">
+            <button
+              onClick={runDataSummary}
+              disabled={aiStatus === 'running'}
+              className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-surface-700 text-gray-300 text-xs font-medium disabled:opacity-40 active:bg-surface-600"
+            >
+              📊 Data
+            </button>
+            <button
+              onClick={runAiAnalysis}
+              disabled={aiStatus === 'running' || !isLive}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-accent-500/20 text-accent-400 text-xs font-medium disabled:opacity-40 disabled:cursor-not-allowed active:bg-accent-500/30"
+            >
+              {aiStatus === 'running' ? (
+                <>
+                  <div className="w-3 h-3 border-2 border-accent-400 border-t-transparent rounded-full animate-spin" />
+                  AI...
+                </>
+              ) : (
+                <>🤖 AI</>
+              )}
+            </button>
+          </div>
+        </div>
+        {aiStatus === 'running' && (
+          <div className="card p-4 mb-2 flex items-center gap-3 border border-accent-500/20">
+            <div className="w-4 h-4 border-2 border-accent-500 border-t-transparent rounded-full animate-spin shrink-0" />
+            <div>
+              <p className="text-sm text-accent-400 font-medium">AI Analysis Running...</p>
+              <p className="text-[10px] text-gray-500">Generating deep market analysis with investment ideas</p>
+            </div>
+          </div>
+        )}
+        {aiStatus === 'done' && (
+          <div className="card p-3 mb-2 flex items-center gap-2 border border-emerald-500/20">
+            <span className="text-emerald-400">✓</span>
+            <p className="text-xs text-emerald-400">AI analysis updated successfully</p>
+          </div>
+        )}
+        {aiStatus.startsWith('error') && (
+          <div className="card p-3 mb-2 flex items-center gap-2 border border-red-500/20">
+            <span className="text-red-400">✗</span>
+            <p className="text-xs text-red-400">{aiStatus.replace('error: ', 'AI Error: ')}</p>
+          </div>
+        )}
         <div className="card p-4">
-          <div className="text-sm text-gray-300 leading-relaxed whitespace-pre-line">
-            {summary.split('**').map((part, i) =>
-              i % 2 === 1 ? <strong key={i} className="text-white">{part}</strong> : <span key={i}>{part}</span>
-            )}
+          <div className="text-sm text-gray-300 leading-relaxed space-y-3">
+            {summary.split('\n').map((line, li) => {
+              const trimmed = line.trim();
+              if (!trimmed) return null;
+              // Section headers (## Header)
+              if (trimmed.startsWith('## ') || trimmed.startsWith('# ')) {
+                return <h3 key={li} className="text-sm font-bold text-accent-400 mt-3 first:mt-0">{trimmed.replace(/^#+\s*/, '')}</h3>;
+              }
+              // Bullet points (• or -)
+              if (trimmed.startsWith('•') || trimmed.startsWith('- ')) {
+                const content = trimmed.replace(/^[•\-]\s*/, '');
+                return (
+                  <div key={li} className="flex gap-2 pl-1">
+                    <span className="text-accent-500 mt-0.5 shrink-0">•</span>
+                    <span>{renderTextWithLinks(content)}</span>
+                  </div>
+                );
+              }
+              // Regular text with bold and ticker links
+              return (
+                <p key={li}>{renderTextWithLinks(trimmed)}</p>
+              );
+            })}
           </div>
           <p className="text-[10px] text-gray-600 mt-3">
-            Generated by AI · {dataSource} · Not financial advice
+            {aiStatus === 'done' ? '🤖 AI-powered analysis' : '📊 Data-driven summary'}
+            {aiGeneratedAt ? ` · Generated ${new Date(aiGeneratedAt).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}` : ''}
+            {' · '}{dataSource} · Not financial advice
           </p>
         </div>
       </div>
 
       <Disclaimer />
+      <p className="text-[9px] text-gray-700 text-center pb-2">v1.1.0</p>
     </div>
   );
 }

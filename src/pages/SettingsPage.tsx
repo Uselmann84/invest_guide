@@ -194,24 +194,10 @@ export default function SettingsPage() {
         </div>
       </div>
 
-      {/* API Keys & Live Mode */}
+      {/* OpenAI API Configuration */}
       <div className="card p-4">
-        <SectionHeader title="Live Mode & API" />
-        <p className="text-xs text-gray-500 mb-3">Stock data from Yahoo Finance (free). AI analysis powered by OpenAI.</p>
-
-        {/* Live Mode Toggle */}
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <p className="text-sm font-medium">Live Mode</p>
-            <p className="text-xs text-gray-500 mt-0.5">Enable AI-powered market analysis</p>
-          </div>
-          <button
-            onClick={() => update('liveMode', !prefs.liveMode)}
-            className={`w-12 h-7 rounded-full transition-all ${prefs.liveMode ? 'bg-emerald-500' : 'bg-white/10'}`}
-          >
-            <div className={`w-5 h-5 rounded-full bg-white shadow-md transition-transform ${prefs.liveMode ? 'translate-x-6' : 'translate-x-1'}`} />
-          </button>
-        </div>
+        <SectionHeader title="AI Analysis" />
+        <p className="text-xs text-gray-500 mb-3">Stock prices come from Yahoo Finance (free, always on). AI analysis requires an OpenAI API key.</p>
 
         {/* OpenAI Key */}
         <div className="mb-3">
@@ -219,7 +205,7 @@ export default function SettingsPage() {
           <input
             type="password"
             value={prefs.openaiApiKey}
-            onChange={e => update('openaiApiKey', e.target.value)}
+            onChange={e => { update('openaiApiKey', e.target.value); if (e.target.value) update('liveMode', true); }}
             placeholder="sk-..."
             className="input-field text-sm"
           />
@@ -227,14 +213,18 @@ export default function SettingsPage() {
 
         {/* Model Select */}
         <div className="mb-3">
-          <Select label="OpenAI Model" value={prefs.openaiModel}
+          <Select label="Model" value={prefs.openaiModel}
             options={['gpt-4o-mini', 'gpt-4o', 'gpt-4-turbo', 'gpt-3.5-turbo']}
             onChange={v => update('openaiModel', v)} />
         </div>
 
-        {prefs.liveMode && prefs.openaiApiKey && (
+        {prefs.openaiApiKey ? (
           <div className="mt-2 p-2 rounded-lg bg-emerald-500/10 text-emerald-400 text-xs">
-            ✓ Live mode active — All data powered by OpenAI ({prefs.openaiModel})
+            ✓ AI enabled — Tap 🤖 AI on the Dashboard to generate analysis ({prefs.openaiModel})
+          </div>
+        ) : (
+          <div className="mt-2 p-2 rounded-lg bg-white/5 text-gray-500 text-xs">
+            Add an API key to enable AI analysis. Data-driven summaries work without it.
           </div>
         )}
         <p className="text-[10px] text-gray-600 mt-2">API keys are stored locally and never sent to third parties.</p>
@@ -245,8 +235,8 @@ export default function SettingsPage() {
         <SectionHeader title="Data Refresh" />
         <div className="flex items-center justify-between mb-4">
           <div>
-            <p className="text-sm font-medium">Auto Refresh</p>
-            <p className="text-xs text-gray-500 mt-0.5">Auto-fetch latest prices & AI analysis</p>
+            <p className="text-sm font-medium">Auto Refresh Prices</p>
+            <p className="text-xs text-gray-500 mt-0.5">Auto-fetch latest stock prices from Yahoo Finance</p>
           </div>
           <button
             onClick={() => update('autoRefresh', !prefs.autoRefresh)}

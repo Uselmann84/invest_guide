@@ -4,7 +4,7 @@ import DashboardPage from './pages/DashboardPage';
 import TrendsPage from './pages/TrendsPage';
 import StocksPage from './pages/StocksPage';
 import InstitutionsPage from './pages/InstitutionsPage';
-import SimulatorPage from './pages/SimulatorPage';
+
 import AgentPage from './pages/AgentPage';
 import SettingsPage from './pages/SettingsPage';
 import PortfolioPage from './pages/PortfolioPage';
@@ -18,7 +18,6 @@ const tabs: { id: TabId; label: string; icon: string }[] = [
   { id: 'stocks', label: 'Stocks', icon: '◈' },
   { id: 'institutions', label: 'Inst.', icon: '◉' },
   { id: 'portfolio', label: 'Portfolio', icon: '◫' },
-  { id: 'simulator', label: 'Sim', icon: '◧' },
   { id: 'agent', label: 'Agent', icon: '◬' },
   { id: 'settings', label: 'Settings', icon: '⚙' },
 ];
@@ -43,11 +42,6 @@ function NavIcon({ id, active }: { id: TabId; active: boolean }) {
     institutions: (
       <svg viewBox="0 0 24 24" fill="none" className="w-5 h-5" stroke="currentColor" strokeWidth={active ? 2.5 : 1.5}>
         <path d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" strokeLinecap="round" strokeLinejoin="round" />
-      </svg>
-    ),
-    simulator: (
-      <svg viewBox="0 0 24 24" fill="none" className="w-5 h-5" stroke="currentColor" strokeWidth={active ? 2.5 : 1.5}>
-        <path d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zm0 8a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zm10 0a1 1 0 011-1h4a1 1 0 011 1v6a1 1 0 01-1 1h-4a1 1 0 01-1-1v-6z" strokeLinecap="round" strokeLinejoin="round" />
       </svg>
     ),
     agent: (
@@ -127,7 +121,6 @@ export default function App() {
     stocks: <StocksPage />,
     institutions: <InstitutionsPage />,
     portfolio: <PortfolioPage />,
-    simulator: <SimulatorPage />,
     agent: <AgentPage />,
     settings: <SettingsPage />,
   };
@@ -151,11 +144,8 @@ function AppContent({ activeTab, setActiveTab, pages }: {
 
   return (
     <div className="min-h-screen bg-surface-950 text-white">
-      {/* Status bar spacer */}
-      <div className="h-[env(safe-area-inset-top,0px)]" />
-
-      {/* Top header bar */}
-      <header className="sticky top-0 z-30 bg-surface-950/90 backdrop-blur-xl border-b border-white/5">
+      {/* Top header bar — fixed with safe area inset */}
+      <header className="fixed top-0 left-0 right-0 z-30 bg-surface-950/90 backdrop-blur-xl border-b border-white/5" style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}>
         <div className="max-w-lg mx-auto flex items-center justify-between px-4 py-2">
           <div className="flex items-center gap-2">
             <span className="text-lg font-bold text-accent-400">InvestGuide</span>
@@ -188,8 +178,8 @@ function AppContent({ activeTab, setActiveTab, pages }: {
         </div>
       </header>
 
-      {/* Main content */}
-      <main className="px-4 pt-2 pb-24 max-w-lg mx-auto">
+      {/* Main content — offset for fixed header */}
+      <main className="px-4 pb-24 max-w-lg mx-auto" style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 52px)' }}>
         {pages[activeTab]}
       </main>
 

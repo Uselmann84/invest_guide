@@ -8,6 +8,7 @@ import { SectionHeader, TabBar, ChangeIndicator } from '../components/SharedComp
 import { CompanyDetail } from './StocksPage';
 import { Company } from '../models/types';
 import { AreaChart, Area, XAxis, YAxis, ResponsiveContainer, Tooltip, ReferenceLine, CartesianGrid } from 'recharts';
+import SimulatorPage from './SimulatorPage';
 
 function fmt(n: number): string {
   return n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -354,10 +355,13 @@ export default function PortfolioPage() {
   const [chartData, setChartData] = useState<{ date: string; value: number; cost: number }[]>([]);
   const [chartLoading, setChartLoading] = useState(false);
 
-  const getPrice = useCallback((ticker: string) => {
-    const c = companies.find(c => c.ticker === ticker);
-    return c?.price ?? 0;
+  const getCompany = useCallback((ticker: string) => {
+    return companies.find(c => c.ticker === ticker) ?? null;
   }, [companies]);
+
+  const getPrice = useCallback((ticker: string) => {
+    return getCompany(ticker)?.price ?? 0;
+  }, [getCompany]);
 
   const addHolding = (h: StockHolding) => {
     portfolioService.addHolding(h);
@@ -438,13 +442,13 @@ export default function PortfolioPage() {
       if (chartTf === 'ALL') {
         // Compute how many years since earliest date
         const years = (Date.now() - new Date(earliestDate).getTime()) / (365.25 * 24 * 60 * 60 * 1000);
-        if (years > 5) { range = 'max'; interval = '1wk'; }
+        if (years > 5) { range = 'max'; interval = '1d'; }
         else if (years > 2) { range = `${Math.ceil(years)}y`; interval = '1d'; }
         else { range = `${Math.ceil(years)}y`; interval = '1d'; }
       } else if (chartTf === '1Y') { range = '1y'; interval = '1d'; }
       else if (chartTf === '6M') { range = '6mo'; interval = '1d'; }
-      else if (chartTf === '1M') { range = '1mo'; interval = '1d'; }
-      else { range = '5d'; interval = '15m'; } // 1W
+      else if (chartTf === '1M') { range = '1mo'; interval = '1h'; }
+      else { range = '5d'; interval = '30m'; } // 1W
 
       const histories = await Promise.all(
         allTickers.map(async t => ({ ticker: t, data: await yahooFinance.getChartISO(t, range, interval) }))
@@ -465,12 +469,29 @@ export default function PortfolioPage() {
         return vested;
       };
 
-      // Build date→ticker→price map (dates are now YYYY-MM-DD)
+      // Build date→ticker→price map (dates are now YYYY-MM-DD or YYYY-MM-DDTHH:MM)
       const dateMap = new Map<string, Record<string, number>>();
       for (const { ticker, data } of histories) {
         for (const pt of data) {
           if (!dateMap.has(pt.date)) dateMap.set(pt.date, {});
           dateMap.get(pt.date)![ticker] = pt.value;
+        }
+      }
+
+      // Inject RSU vesting dates so step changes are always visible
+      const today = new Date().toISOString().slice(0, 10);
+      for (const { schedule } of rsuSchedules) {
+        for (const e of schedule) {
+          if (e.date >= earliestDate && e.date <= today && !dateMap.has(e.date)) {
+            dateMap.set(e.date, {});
+          }
+        }
+      }
+
+      // Also inject buy dates for stock holdings
+      for (const h of holdings) {
+        if (h.buyDate >= earliestDate && h.buyDate <= today && !dateMap.has(h.buyDate)) {
+          dateMap.set(h.buyDate, {});
         }
       }
 
@@ -530,10 +551,13 @@ export default function PortfolioPage() {
       </div>
 
       <TabBar
-        tabs={[{ id: 'overview', label: 'Overview' }, { id: 'stocks', label: 'Stocks' }, { id: 'rsus', label: 'RSUs' }, { id: 'tax', label: 'Tax' }]}
+        tabs={[{ id: 'overview', label: 'Overview' }, { id: 'stocks', label: 'Stocks' }, { id: 'rsus', label: 'RSUs' }, { id: 'tax', label: 'Tax' }, { id: 'sim', label: 'Simulator' }]}
         active={view}
         onChange={setView}
       />
+
+      {/* ---- SIMULATOR ---- */}
+      {view === 'sim' && <SimulatorPage />}
 
       {/* ---- OVERVIEW ---- */}
       {view === 'overview' && (
@@ -599,8 +623,10 @@ export default function PortfolioPage() {
                   const minVal = Math.min(...values);
                   const maxVal = Math.max(...values);
                   const padding = (maxVal - minVal) * 0.05 || 1;
-                  const yMin = minVal - padding;
-                  const yMax = maxVal + padding;
+                  let yMin = minVal - padding;
+                  let yMax = maxVal + padding;
+                  // Ensure zero is visible in profit mode
+                  if (chartMode === 'profit') { yMin = Math.min(yMin, 0); yMax = Math.max(yMax, 0); }
                   const isPositive = displayData.length > 0 && displayData[displayData.length - 1].value >= (chartMode === 'profit' ? 0 : displayData[0].value);
                   const color = isPositive ? '#34d399' : '#f87171';
                   return (
@@ -653,7 +679,7 @@ export default function PortfolioPage() {
                           formatter={(v: number) => [chartMode === 'profit' ? `${v >= 0 ? '+' : ''}$${fmt(v)}` : `$${fmt(v)}`, chartMode === 'profit' ? 'P&L' : 'Value']}
                         />
                         <Area type="monotone" dataKey="value" stroke={color} strokeWidth={2} fill="url(#portfolioGrad)" dot={false} />
-                        {chartMode === 'profit' && <ReferenceLine y={0} stroke="rgba(255,255,255,0.1)" strokeDasharray="3 3" />}
+                        {chartMode === 'profit' && <ReferenceLine y={0} stroke="rgba(255,255,255,0.3)" strokeDasharray="4 4" strokeWidth={1.5} />}
                       </AreaChart>
                     </ResponsiveContainer>
                   );
@@ -684,13 +710,14 @@ export default function PortfolioPage() {
               <SectionHeader title="My Stocks" />
               <div className="space-y-2">
                 {holdings.map(h => {
-                  const price = getPrice(h.ticker);
-                  const gain = (price - h.buyPrice) * h.shares;
-                  const gainPct = h.buyPrice > 0 ? ((price - h.buyPrice) / h.buyPrice) * 100 : 0;
+                  const co = getCompany(h.ticker);
+                  const price = co?.price ?? 0;
+                  const currentVal = price * h.shares;
+                  const dailyChg = (co?.change ?? 0) * h.shares;
+                  const dailyChgPct = co?.changePercent ?? 0;
                   return (
                     <button key={h.id} onClick={() => {
-                      const c = companies.find(c => c.ticker === h.ticker);
-                      if (c) setSelectedCompany(c);
+                      if (co) setSelectedCompany(co);
                     }} className="card w-full text-left px-4 py-3 flex items-center gap-3 active:scale-[0.98] transition-transform">
                       <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-accent-500/20 to-accent-500/5 flex items-center justify-center text-xs font-bold text-accent-400 shrink-0">
                         {h.ticker.slice(0, 2)}
@@ -698,12 +725,12 @@ export default function PortfolioPage() {
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center justify-between">
                           <span className="text-sm font-semibold">{h.ticker}</span>
-                          <span className="text-sm font-mono">${price > 0 ? fmt(price) : '—'}</span>
+                          <span className="text-sm font-mono">{fmtK(currentVal)}</span>
                         </div>
                         <div className="flex items-center justify-between mt-0.5">
-                          <span className="text-[10px] text-gray-500 truncate">{h.shares} shares · avg ${fmt(h.buyPrice)}</span>
-                          <span className={`text-[11px] font-semibold ${gain >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                            {gain >= 0 ? '+' : ''}{fmtK(gain)} ({gainPct >= 0 ? '+' : ''}{gainPct.toFixed(1)}%)
+                          <span className="text-[10px] text-gray-500 truncate">{h.shares} shares · ${price > 0 ? fmt(price) : '—'}</span>
+                          <span className={`text-[11px] font-semibold ${dailyChg >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                            {dailyChg >= 0 ? '+' : ''}{fmtK(dailyChg)} ({dailyChgPct >= 0 ? '+' : ''}{dailyChgPct.toFixed(2)}%)
                           </span>
                         </div>
                       </div>
@@ -720,9 +747,15 @@ export default function PortfolioPage() {
               <SectionHeader title="My RSUs" />
               <div className="space-y-2">
                 {rsus.map(g => {
-                  const price = getPrice(g.ticker);
+                  const co = getCompany(g.ticker);
+                  const price = co?.price ?? 0;
                   const vested = portfolioService.getVestedShares(g);
-                  const pctVested = (vested / g.totalShares) * 100;
+                  const unvested = g.totalShares - vested;
+                  const unvestedVal = price * unvested;
+                  const dailyChg = (co?.change ?? 0) * (vested + unvested);
+                  const dailyChgPct = co?.changePercent ?? 0;
+                  const gainSinceGrant = (price - g.grantPrice) * g.totalShares;
+                  const gainSinceGrantPct = g.grantPrice > 0 ? ((price - g.grantPrice) / g.grantPrice) * 100 : 0;
                   return (
                     <button key={g.id} onClick={() => setSelectedRsu(g)}
                       className="card w-full text-left px-4 py-3 flex items-center gap-3 active:scale-[0.98] transition-transform">
@@ -732,14 +765,16 @@ export default function PortfolioPage() {
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center justify-between">
                           <span className="text-sm font-semibold">{g.ticker}</span>
-                          <span className="text-sm font-mono">${price > 0 ? fmt(price) : '—'}</span>
+                          <span className="text-sm font-mono">{fmtK(unvestedVal)}</span>
                         </div>
+                        <span className="text-[10px] text-gray-500">{unvested} unvested · ${price > 0 ? fmt(price) : '—'}</span>
                         <div className="flex items-center justify-between mt-0.5">
-                          <span className="text-[10px] text-gray-500">{vested}/{g.totalShares} vested</span>
-                          <span className="text-[10px] text-gray-500">{pctVested.toFixed(0)}%</span>
-                        </div>
-                        <div className="h-1 bg-white/5 rounded-full mt-1.5 overflow-hidden">
-                          <div className="h-full bg-violet-500 rounded-full transition-all" style={{ width: `${pctVested}%` }} />
+                          <span className={`text-[10px] font-semibold ${dailyChg >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                            Today: {dailyChg >= 0 ? '+' : ''}{fmtK(dailyChg)} ({dailyChgPct >= 0 ? '+' : ''}{dailyChgPct.toFixed(2)}%)
+                          </span>
+                          <span className={`text-[10px] font-semibold ${gainSinceGrant >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                            Grant: {gainSinceGrant >= 0 ? '+' : ''}{fmtK(gainSinceGrant)} ({gainSinceGrantPct >= 0 ? '+' : ''}{gainSinceGrantPct.toFixed(1)}%)
+                          </span>
                         </div>
                       </div>
                     </button>
@@ -778,18 +813,20 @@ export default function PortfolioPage() {
           )}
 
           {holdings.map(h => {
-            const price = getPrice(h.ticker);
+            const co = getCompany(h.ticker);
+            const price = co?.price ?? 0;
             const currentVal = price * h.shares;
             const investedVal = h.buyPrice * h.shares;
             const gain = currentVal - investedVal;
             const gainPct = investedVal > 0 ? (gain / investedVal) * 100 : 0;
+            const dailyChg = (co?.change ?? 0) * h.shares;
+            const dailyChgPct = co?.changePercent ?? 0;
             const taxInfo = portfolioService.calcStockTax(h, price, tax);
             return (
               <div key={h.id} className="card p-4">
                 <div className="flex items-center justify-between mb-2">
                   <button onClick={() => {
-                    const c = companies.find(c => c.ticker === h.ticker);
-                    if (c) setSelectedCompany(c);
+                    if (co) setSelectedCompany(co);
                   }} className="text-left">
                     <span className="text-sm font-bold text-accent-400">{h.ticker}</span>
                     <span className="text-xs text-gray-500 ml-2">{h.name}</span>
@@ -806,8 +843,8 @@ export default function PortfolioPage() {
                     <p className="text-xs font-mono">${fmt(h.buyPrice)}</p>
                   </div>
                   <div>
-                    <p className="text-[10px] text-gray-500">Current</p>
-                    <p className="text-xs font-mono">${price > 0 ? fmt(price) : '—'}</p>
+                    <p className="text-[10px] text-gray-500">Value</p>
+                    <p className="text-xs font-mono font-semibold">{fmtK(currentVal)}</p>
                   </div>
                   <div>
                     <p className="text-[10px] text-gray-500">P&L</p>
@@ -818,10 +855,15 @@ export default function PortfolioPage() {
                 </div>
                 <div className="flex items-center justify-between mt-2 pt-2 border-t border-white/5">
                   <div className="flex items-center gap-2">
-                    <span className="text-[10px] text-gray-500">Value: ${fmt(currentVal)}</span>
-                    <ChangeIndicator value={gainPct} />
+                    <span className={`text-[10px] font-semibold ${dailyChg >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                      Today: {dailyChg >= 0 ? '+' : ''}{fmtK(dailyChg)} ({dailyChgPct >= 0 ? '+' : ''}{dailyChgPct.toFixed(2)}%)
+                    </span>
+                    <span className="text-[10px] text-gray-600">·</span>
+                    <span className={`text-[10px] font-semibold ${gain >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                      Total: {gainPct >= 0 ? '+' : ''}{gainPct.toFixed(1)}%
+                    </span>
                   </div>
-                  <span className="text-[10px] text-gray-500">After tax: <span className="text-accent-400">${fmt(taxInfo.afterTax)}</span></span>
+                  <span className="text-[10px] text-gray-500">Tax: <span className="text-accent-400">{fmtK(taxInfo.afterTax)}</span></span>
                 </div>
               </div>
             );
@@ -844,10 +886,16 @@ export default function PortfolioPage() {
           )}
 
           {rsus.map(g => {
-            const price = getPrice(g.ticker);
+            const co = getCompany(g.ticker);
+            const price = co?.price ?? 0;
             const vested = portfolioService.getVestedShares(g);
             const unvested = g.totalShares - vested;
+            const unvestedVal = price * unvested;
             const vestedValue = price * vested;
+            const dailyChg = (co?.change ?? 0) * g.totalShares;
+            const dailyChgPct = co?.changePercent ?? 0;
+            const gainSinceGrant = (price - g.grantPrice) * g.totalShares;
+            const gainSinceGrantPct = g.grantPrice > 0 ? ((price - g.grantPrice) / g.grantPrice) * 100 : 0;
             const taxCalc = portfolioService.calcRsuTax(g, price, vested, tax);
             const pctVested = (vested / g.totalShares) * 100;
             return (
@@ -863,16 +911,16 @@ export default function PortfolioPage() {
                 </div>
                 <div className="grid grid-cols-4 gap-2 text-center mb-2">
                   <div>
-                    <p className="text-[10px] text-gray-500">Total</p>
-                    <p className="text-xs font-semibold">{g.totalShares}</p>
+                    <p className="text-[10px] text-gray-500">Unvested Val</p>
+                    <p className="text-xs font-semibold text-amber-400">{fmtK(unvestedVal)}</p>
                   </div>
                   <div>
-                    <p className="text-[10px] text-gray-500">Vested</p>
-                    <p className="text-xs font-semibold text-emerald-400">{vested}</p>
+                    <p className="text-[10px] text-gray-500">Vested Val</p>
+                    <p className="text-xs font-semibold text-emerald-400">{fmtK(vestedValue)}</p>
                   </div>
                   <div>
-                    <p className="text-[10px] text-gray-500">Unvested</p>
-                    <p className="text-xs font-semibold text-amber-400">{unvested}</p>
+                    <p className="text-[10px] text-gray-500">{unvested} unvested</p>
+                    <p className="text-xs font-semibold">{vested}/{g.totalShares}</p>
                   </div>
                   <div>
                     <p className="text-[10px] text-gray-500">Grant $</p>
@@ -884,13 +932,20 @@ export default function PortfolioPage() {
                   <div className="h-1.5 bg-white/5 rounded-full overflow-hidden">
                     <div className="h-full bg-emerald-500 rounded-full transition-all" style={{ width: `${pctVested}%` }} />
                   </div>
-                  <p className="text-[10px] text-gray-500 mt-1">{pctVested.toFixed(0)}% vested · {g.vestingFrequencyMonths}mo frequency · {g.vestingYears}yr schedule</p>
+                  <p className="text-[10px] text-gray-500 mt-1">{pctVested.toFixed(0)}% vested · {g.vestingFrequencyMonths}mo freq · {g.vestingYears}yr</p>
                 </div>
                 <div className="flex items-center justify-between pt-2 border-t border-white/5">
-                  <span className="text-[10px] text-gray-500">Vested value: <span className="text-white font-semibold">${fmt(vestedValue)}</span></span>
-                  <span className="text-[10px] text-gray-500">After tax: <span className="text-accent-400">${fmt(taxCalc.afterTax)}</span></span>
+                  <span className={`text-[10px] font-semibold ${dailyChg >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                    Today: {dailyChg >= 0 ? '+' : ''}{fmtK(dailyChg)} ({dailyChgPct >= 0 ? '+' : ''}{dailyChgPct.toFixed(2)}%)
+                  </span>
+                  <span className={`text-[10px] font-semibold ${gainSinceGrant >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                    Grant: {gainSinceGrant >= 0 ? '+' : ''}{fmtK(gainSinceGrant)} ({gainSinceGrantPct >= 0 ? '+' : ''}{gainSinceGrantPct.toFixed(1)}%)
+                  </span>
                 </div>
-                <p className="text-[10px] text-gray-600 mt-1">Tap for full vesting schedule →</p>
+                <div className="flex items-center justify-between mt-1">
+                  <span className="text-[10px] text-gray-500">After tax: <span className="text-accent-400">{fmtK(taxCalc.afterTax)}</span></span>
+                  <span className="text-[10px] text-gray-600">Tap for schedule →</span>
+                </div>
               </button>
             );
           })}

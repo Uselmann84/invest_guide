@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import { mockTrends } from '../data/mockTrends';
 import { ScoreBar, SectionHeader, TabBar } from '../components/SharedComponents';
 import { TechTrend, Company } from '../models/types';
@@ -91,17 +91,21 @@ function TrendCard({ trend, expanded, onToggle, onCompanyClick }: { trend: TechT
 }
 
 export default function TrendsPage() {
-  const { companies } = useMarketData();
+  const { companies, trends, trendsGeneratedAt, aiStatus, runAiAnalysis, isLive } = useMarketData();
   const [sortBy, setSortBy] = useState('momentum');
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [selectedCompany, setSelectedCompany] = useState<Company | null>(null);
+  const scrollPosRef = useRef(0);
 
   const handleCompanyClick = (ticker: string) => {
     const company = companies.find(c => c.ticker === ticker);
-    if (company) setSelectedCompany(company);
+    if (company) {
+      scrollPosRef.current = window.scrollY;
+      setSelectedCompany(company);
+    }
   };
 
-  const sorted = [...mockTrends].sort((a, b) => {
+  const sorted = [...trends].sort((a, b) => {
     switch (sortBy) {
       case 'demand': return b.marketDemandScore - a.marketDemandScore;
       case 'investment': return b.investmentAttentionScore - a.investmentAttentionScore;
@@ -111,14 +115,37 @@ export default function TrendsPage() {
     }
   });
 
-  if (selectedCompany) return <CompanyDetail company={selectedCompany} onClose={() => setSelectedCompany(null)} />;
+  if (selectedCompany) return <CompanyDetail company={selectedCompany} onClose={() => { setSelectedCompany(null); requestAnimationFrame(() => window.scrollTo(0, scrollPosRef.current)); }} />;
 
   return (
     <div className="space-y-4">
-      <div>
-        <h1 className="text-xl font-bold">Technology Trends</h1>
-        <p className="text-xs text-gray-500 mt-0.5">Tracking trends that historically affect markets</p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-xl font-bold">Technology Trends</h1>
+          <p className="text-xs text-gray-500 mt-0.5">Tracking trends that historically affect markets</p>
+        </div>
+        <button
+          onClick={runAiAnalysis}
+          disabled={aiStatus === 'running' || !isLive}
+          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-accent-500/20 text-accent-400 text-xs font-medium disabled:opacity-40 disabled:cursor-not-allowed active:bg-accent-500/30"
+        >
+          {aiStatus === 'running' ? (
+            <>
+              <div className="w-3 h-3 border-2 border-accent-400 border-t-transparent rounded-full animate-spin" />
+              Updating...
+            </>
+          ) : (
+            <>🤖 AI Update</>
+          )}
+        </button>
       </div>
+
+      {aiStatus.startsWith('error') && (
+        <div className="card p-3 flex items-center gap-2 border border-red-500/20">
+          <span className="text-red-400">✗</span>
+          <p className="text-xs text-red-400">{aiStatus.replace('error: ', '')}</p>
+        </div>
+      )}
 
       <TabBar tabs={sortOptions} active={sortBy} onChange={setSortBy} />
 
@@ -151,6 +178,12 @@ export default function TrendsPage() {
           />
         ))}
       </div>
+
+      {trendsGeneratedAt && (
+        <p className="text-[10px] text-gray-600 text-center">
+          🤖 AI-updated · {new Date(trendsGeneratedAt).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+        </p>
+      )}
     </div>
   );
 }

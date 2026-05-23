@@ -1,20 +1,35 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { mockCompanies } from '../data/mockCompanies';
 import { SectionHeader, TabBar, ChangeIndicator, Disclaimer } from '../components/SharedComponents';
 import { PortfolioPosition, ScenarioParams } from '../models/types';
-import { Line, XAxis, YAxis, ResponsiveContainer, Tooltip, CartesianGrid, Area, AreaChart } from 'recharts';
+import { portfolioService } from '../services/portfolioService';
+import { useMarketData } from '../components/MarketDataContext';
+import { Line, XAxis, YAxis, ResponsiveContainer, Tooltip, CartesianGrid, Area, AreaChart, ReferenceLine } from 'recharts';
 
 const presetScenarios: { id: string; label: string; params: ScenarioParams }[] = [
-  { id: 'base', label: 'Base', params: { expectedAnnualReturn: 12, volatility: 15, interestRateShock: 0, inflationShock: 0, techMultiplier: 1.0, durationMonths: 12 } },
-  { id: 'conservative', label: 'Conservative', params: { expectedAnnualReturn: 6, volatility: 8, interestRateShock: 0, inflationShock: 0, techMultiplier: 0.8, durationMonths: 12 } },
-  { id: 'optimistic', label: 'Optimistic', params: { expectedAnnualReturn: 25, volatility: 18, interestRateShock: -50, inflationShock: -1, techMultiplier: 1.5, durationMonths: 12 } },
+  { id: 'base', label: 'Base', params: { expectedAnnualReturn: 12, volatility: 15, interestRateShock: 0, inflationShock: 0, techMultiplier: 1.0, durationMonths: 36 } },
+  { id: 'conservative', label: 'Conservative', params: { expectedAnnualReturn: 6, volatility: 8, interestRateShock: 0, inflationShock: 0, techMultiplier: 0.8, durationMonths: 36 } },
+  { id: 'optimistic', label: 'Optimistic', params: { expectedAnnualReturn: 25, volatility: 18, interestRateShock: -50, inflationShock: -1, techMultiplier: 1.5, durationMonths: 36 } },
   { id: 'crisis', label: 'Crisis', params: { expectedAnnualReturn: -20, volatility: 35, interestRateShock: 200, inflationShock: 3, techMultiplier: 0.5, durationMonths: 12 } },
-  { id: 'tech-boom', label: 'Tech Boom', params: { expectedAnnualReturn: 40, volatility: 25, interestRateShock: -100, inflationShock: 0, techMultiplier: 2.0, durationMonths: 12 } },
+  { id: 'tech-boom', label: 'Tech Boom', params: { expectedAnnualReturn: 40, volatility: 25, interestRateShock: -100, inflationShock: 0, techMultiplier: 2.0, durationMonths: 36 } },
   { id: 'rate-shock', label: 'Rate Shock', params: { expectedAnnualReturn: -8, volatility: 22, interestRateShock: 300, inflationShock: 2, techMultiplier: 0.7, durationMonths: 12 } },
 ];
 
-function generateSimHistory(startVal: number, params: ScenarioParams, positions: PortfolioPosition[]) {
-  const out: { date: string; value: number; sp500: number }[] = [];
+interface VestingEvent {
+  monthOffset: number;
+  ticker: string;
+  shares: number;
+  isCliff: boolean;
+  date: string;
+}
+
+function generateSimHistory(
+  startVal: number,
+  params: ScenarioParams,
+  positions: PortfolioPosition[],
+  vestingEvents: VestingEvent[],
+) {
+  const out: { date: string; value: number; sp500: number; vestEvent?: string; vestValue?: number }[] = [];
   let val = startVal;
   let sp = startVal;
   const m = params.durationMonths;
@@ -30,13 +45,38 @@ function generateSimHistory(startVal: number, params: ScenarioParams, positions:
   for (let i = 0; i <= m; i++) {
     const d = new Date();
     d.setMonth(d.getMonth() + i);
+
+    // Add vesting event value
+    const eventsThisMonth = vestingEvents.filter(e => e.monthOffset === i);
+    let vestVal = 0;
+    let vestLabel: string | undefined;
+    for (const ev of eventsThisMonth) {
+      const pos = positions.find(p => p.ticker === ev.ticker);
+      const price = pos?.currentPrice ?? 0;
+      vestVal += price * ev.shares;
+      vestLabel = (vestLabel ? vestLabel + ', ' : '') + `+${ev.shares} ${ev.ticker}${ev.isCliff ? ' (cliff)' : ''}`;
+    }
+
+    if (i === 0) {
+      out.push({
+        date: d.toLocaleDateString('en-US', { month: 'short', year: '2-digit' }),
+        value: Math.round(val),
+        sp500: Math.round(sp),
+        vestEvent: vestLabel,
+        vestValue: vestVal > 0 ? Math.round(vestVal) : undefined,
+      });
+      continue;
+    }
+
     const noise = (Math.random() - 0.5) * 2 * monthlyV;
-    val = val * (1 + monthlyR + techBoost / m + noise);
+    val = val * (1 + monthlyR + techBoost / m + noise) + vestVal;
     sp = sp * (1 + spMonthlyR + (Math.random() - 0.5) * 0.02);
     out.push({
       date: d.toLocaleDateString('en-US', { month: 'short', year: '2-digit' }),
       value: Math.round(val),
       sp500: Math.round(sp),
+      vestEvent: vestLabel,
+      vestValue: vestVal > 0 ? Math.round(vestVal) : undefined,
     });
   }
   return out;
@@ -60,32 +100,130 @@ function ParamSlider({ label, value, min, max, step, suffix, onChange }: {
 }
 
 export default function SimulatorPage() {
-  const [positions, setPositions] = useState<PortfolioPosition[]>([
-    { ticker: 'NVDA', name: 'NVIDIA', allocation: 25, shares: 18, avgPrice: 120, currentPrice: 138.72, gain: 337, gainPercent: 15.6 },
-    { ticker: 'MSFT', name: 'Microsoft', allocation: 20, shares: 5, avgPrice: 380, currentPrice: 415.28, gain: 176.4, gainPercent: 9.3 },
-    { ticker: 'AMD', name: 'AMD', allocation: 15, shares: 10, avgPrice: 140, currentPrice: 154.62, gain: 146.2, gainPercent: 10.4 },
-    { ticker: 'AVGO', name: 'Broadcom', allocation: 15, shares: 8, avgPrice: 160, currentPrice: 186.45, gain: 211.6, gainPercent: 16.5 },
-    { ticker: 'META', name: 'Meta', allocation: 15, shares: 2, avgPrice: 480, currentPrice: 582.14, gain: 204.3, gainPercent: 21.3 },
-    { ticker: 'CRWD', name: 'CrowdStrike', allocation: 10, shares: 3, avgPrice: 290, currentPrice: 338.92, gain: 146.8, gainPercent: 16.9 },
-  ]);
+  const { companies } = useMarketData();
+  const holdings = useMemo(() => portfolioService.getHoldings(), []);
+  const rsus = useMemo(() => portfolioService.getRsuGrants(), []);
+
+  // Build positions from portfolio
+  const [positions, setPositions] = useState<PortfolioPosition[]>([]);
   const [startingAmount, setStartingAmount] = useState(100000);
+
+  // Initialize from portfolio on mount
+  useEffect(() => {
+    const getPrice = (ticker: string) => companies.find(c => c.ticker === ticker)?.price ?? 0;
+
+    const stockPositions: PortfolioPosition[] = holdings.map(h => {
+      const price = getPrice(h.ticker);
+      const currentVal = price * h.shares;
+      const investedVal = h.buyPrice * h.shares;
+      return {
+        ticker: h.ticker, name: h.name, allocation: 0,
+        shares: h.shares, avgPrice: h.buyPrice, currentPrice: price,
+        gain: currentVal - investedVal,
+        gainPercent: investedVal > 0 ? ((currentVal - investedVal) / investedVal) * 100 : 0,
+      };
+    });
+
+    const rsuPositions: PortfolioPosition[] = rsus.map(g => {
+      const price = getPrice(g.ticker);
+      const vested = portfolioService.getVestedShares(g);
+      const currentVal = price * vested;
+      const grantVal = g.grantPrice * vested;
+      return {
+        ticker: g.ticker, name: `${g.name} (RSU)`, allocation: 0,
+        shares: vested, avgPrice: g.grantPrice, currentPrice: price,
+        gain: currentVal - grantVal,
+        gainPercent: grantVal > 0 ? ((currentVal - grantVal) / grantVal) * 100 : 0,
+      };
+    });
+
+    // Merge same tickers (stock + RSU)
+    const merged = new Map<string, PortfolioPosition>();
+    for (const p of [...stockPositions, ...rsuPositions]) {
+      if (merged.has(p.ticker)) {
+        const existing = merged.get(p.ticker)!;
+        const totalShares = existing.shares + p.shares;
+        const totalCost = existing.avgPrice * existing.shares + p.avgPrice * p.shares;
+        existing.shares = totalShares;
+        existing.avgPrice = totalShares > 0 ? totalCost / totalShares : 0;
+        existing.currentPrice = p.currentPrice;
+        existing.gain = existing.gain + p.gain;
+        existing.gainPercent = (totalCost > 0) ? ((p.currentPrice * totalShares - totalCost) / totalCost) * 100 : 0;
+        if (!existing.name.includes('RSU') && p.name.includes('RSU')) existing.name = p.name.replace(' (RSU)', '');
+      } else {
+        merged.set(p.ticker, { ...p });
+      }
+    }
+
+    const all = Array.from(merged.values());
+    const totalVal = all.reduce((s, p) => s + p.currentPrice * p.shares, 0);
+    // Compute allocations based on current value
+    for (const p of all) {
+      p.allocation = totalVal > 0 ? Math.round((p.currentPrice * p.shares / totalVal) * 100) : Math.round(100 / all.length);
+    }
+
+    if (all.length > 0) {
+      setPositions(all);
+      setStartingAmount(Math.round(totalVal));
+    }
+  }, [companies, holdings, rsus]);
+
+  // Compute RSU vesting events as month offsets from now
+  const vestingEvents = useMemo(() => {
+    const events: VestingEvent[] = [];
+    const now = new Date();
+    const today = now.toISOString().slice(0, 10);
+
+    for (const g of rsus) {
+      const schedule = portfolioService.computeVestingSchedule(g);
+      for (const e of schedule) {
+        if (e.date <= today) continue; // Only future vesting
+        const vestDate = new Date(e.date);
+        const monthOffset = (vestDate.getFullYear() - now.getFullYear()) * 12 + (vestDate.getMonth() - now.getMonth());
+        if (monthOffset >= 0) {
+          // e.shares is the shares vesting in this event (not cumulative)
+          const prevIdx = schedule.indexOf(e) - 1;
+          const sharesThisEvent = prevIdx >= 0 ? e.cumulative - schedule[prevIdx].cumulative : e.cumulative;
+          events.push({
+            monthOffset,
+            ticker: g.ticker,
+            shares: sharesThisEvent,
+            isCliff: e.isCliff,
+            date: e.date,
+          });
+        }
+      }
+    }
+    return events;
+  }, [rsus]);
+
+  const savedDuration = () => {
+    try { const v = localStorage.getItem('invest_guide_sim_duration'); return v ? Number(v) : null; } catch { return null; }
+  };
   const [selectedPreset, setSelectedPreset] = useState('base');
-  const [params, setParams] = useState<ScenarioParams>(presetScenarios[0].params);
+  const [params, setParams] = useState<ScenarioParams>(() => ({
+    ...presetScenarios[0].params,
+    durationMonths: savedDuration() ?? presetScenarios[0].params.durationMonths,
+  }));
   const [view, setView] = useState('overview');
   const [showAddStock, setShowAddStock] = useState(false);
   const [searchTicker, setSearchTicker] = useState('');
 
+
   const updateParam = <K extends keyof ScenarioParams>(key: K, val: ScenarioParams[K]) => {
     setParams(p => ({ ...p, [key]: val }));
-    setSelectedPreset('custom');
+    if (key !== 'durationMonths') setSelectedPreset('custom');
+    if (key === 'durationMonths') {
+      try { localStorage.setItem('invest_guide_sim_duration', String(val)); } catch {}
+    }
   };
 
   const selectPreset = (id: string) => {
     const preset = presetScenarios.find(p => p.id === id);
-    if (preset) { setParams(preset.params); setSelectedPreset(id); }
+    if (preset) { setParams(p => ({ ...preset.params, durationMonths: p.durationMonths })); setSelectedPreset(id); }
   };
 
-  const chartData = useMemo(() => generateSimHistory(startingAmount, params, positions), [startingAmount, params, positions]);
+  const chartData = useMemo(() => generateSimHistory(startingAmount, params, positions, vestingEvents), [startingAmount, params, positions, vestingEvents]);
   const finalValue = chartData[chartData.length - 1]?.value || startingAmount;
   const totalReturn = finalValue - startingAmount;
   const totalReturnPct = (totalReturn / startingAmount) * 100;
@@ -159,7 +297,7 @@ export default function SimulatorPage() {
       {/* Chart */}
       <div className="card p-4">
         <SectionHeader title="Projected Performance" />
-        <div className="h-48">
+        <div className="h-56">
           <ResponsiveContainer width="100%" height="100%">
             <AreaChart data={chartData} margin={{ top: 5, right: 5, bottom: 5, left: 5 }}>
               <defs>
@@ -170,15 +308,68 @@ export default function SimulatorPage() {
               </defs>
               <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
               <XAxis dataKey="date" tick={{ fontSize: 9, fill: '#6b7280' }} interval="preserveStartEnd" />
-              <YAxis tick={{ fontSize: 9, fill: '#6b7280' }} tickFormatter={v => `$${(v / 1000).toFixed(0)}k`} />
+              <YAxis tick={{ fontSize: 9, fill: '#6b7280' }} tickFormatter={v => `$${(v / 1000).toFixed(0)}k`} domain={['auto', 'auto']} />
               <Tooltip
                 contentStyle={{ background: '#131c2e', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 12, fontSize: 12 }}
-                formatter={(v: number, name: string) => [`$${v.toLocaleString()}`, name === 'value' ? 'Portfolio' : 'S&P 500']}
+                content={({ active, payload, label }: any) => {
+                  if (!active || !payload?.length) return null;
+                  const d = payload[0]?.payload;
+                  return (
+                    <div className="bg-surface-900 border border-white/10 rounded-xl p-3 text-xs shadow-xl">
+                      <p className="text-gray-400 mb-1">{label}</p>
+                      <p className="text-white font-semibold">Portfolio: ${payload[0]?.value?.toLocaleString()}</p>
+                      {payload[1] && <p className="text-gray-400">S&P 500: ${payload[1]?.value?.toLocaleString()}</p>}
+                      {d?.vestEvent && (
+                        <div className="mt-2 pt-2 border-t border-white/10">
+                          <p className="text-accent-400 font-semibold">🎯 Vesting Event</p>
+                          <p className="text-white">{d.vestEvent}</p>
+                          <p className="text-gray-400">+${d.vestValue?.toLocaleString() ?? '—'} added</p>
+                        </div>
+                      )}
+                    </div>
+                  );
+                }}
               />
-              <Area type="monotone" dataKey="value" stroke={totalReturn >= 0 ? '#10b981' : '#ef4444'} strokeWidth={2} fill="url(#simGrad)" />
+              <Area
+                type="monotone"
+                dataKey="value"
+                stroke={totalReturn >= 0 ? '#10b981' : '#ef4444'}
+                strokeWidth={2}
+                fill="url(#simGrad)"
+                dot={(props: any) => {
+                  const { cx, cy, payload } = props;
+                  if (!payload?.vestEvent) return <circle key={`dot-${cx}`} cx={0} cy={0} r={0} fill="none" />;
+                  return (
+                    <g key={`vest-${cx}-${cy}`}>
+                      <circle cx={cx} cy={cy} r={8} fill="rgba(249,115,22,0.2)" />
+                      <circle cx={cx} cy={cy} r={5} fill="#f97316" stroke="#fff" strokeWidth={1.5} />
+                    </g>
+                  );
+                }}
+                activeDot={(props: any) => {
+                  const { cx, cy, payload } = props;
+                  if (payload?.vestEvent) {
+                    return <circle cx={cx} cy={cy} r={7} fill="#f97316" stroke="#fff" strokeWidth={2} />;
+                  }
+                  return <circle cx={cx} cy={cy} r={4} fill={totalReturn >= 0 ? '#10b981' : '#ef4444'} stroke="#fff" strokeWidth={1.5} />;
+                }}
+              />
               <Line type="monotone" dataKey="sp500" stroke="#6b7280" strokeWidth={1} strokeDasharray="4 4" dot={false} />
             </AreaChart>
           </ResponsiveContainer>
+        </div>
+        <p className="text-[9px] text-gray-600 mt-1 text-center">Orange dots = vesting events • Tap for details</p>
+        {/* Duration slider directly under chart */}
+        <div className="mt-3 pt-3 border-t border-white/5">
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-[11px] text-gray-400">Duration</span>
+            <span className="text-[11px] text-accent-400 font-mono">
+              {params.durationMonths >= 12 ? `${(params.durationMonths / 12).toFixed(params.durationMonths % 12 ? 1 : 0)} years` : `${params.durationMonths} mo`}
+            </span>
+          </div>
+          <input type="range" min={3} max={120} step={3} value={params.durationMonths}
+            onChange={e => updateParam('durationMonths', Number(e.target.value))}
+            className="w-full h-1 bg-white/10 rounded-full appearance-none cursor-pointer accent-accent-500" />
         </div>
       </div>
 
@@ -209,7 +400,6 @@ export default function SimulatorPage() {
           <ParamSlider label="Interest Rate Shock" value={params.interestRateShock} min={-200} max={500} step={25} suffix=" bps" onChange={v => updateParam('interestRateShock', v)} />
           <ParamSlider label="Inflation Shock" value={params.inflationShock} min={-3} max={8} step={0.5} suffix="%" onChange={v => updateParam('inflationShock', v)} />
           <ParamSlider label="Tech Multiplier" value={params.techMultiplier} min={0.2} max={3.0} step={0.1} suffix="x" onChange={v => updateParam('techMultiplier', v)} />
-          <ParamSlider label="Duration" value={params.durationMonths} min={3} max={60} step={3} suffix=" mo" onChange={v => updateParam('durationMonths', v)} />
         </div>
         <div className="mt-3">
           <div className="flex items-center justify-between mb-1">
@@ -224,7 +414,7 @@ export default function SimulatorPage() {
 
       {/* View tabs */}
       <TabBar
-        tabs={[{ id: 'overview', label: 'Overview' }, { id: 'positions', label: 'Positions' }]}
+        tabs={[{ id: 'overview', label: 'Overview' }, { id: 'positions', label: 'Positions' }, { id: 'vesting', label: 'Vesting' }]}
         active={view}
         onChange={setView}
       />
@@ -234,10 +424,11 @@ export default function SimulatorPage() {
           {[
             { label: 'Total Return', value: `${totalReturnPct >= 0 ? '+' : ''}${totalReturnPct.toFixed(1)}%`, color: totalReturnPct >= 0 ? 'text-emerald-400' : 'text-red-400' },
             { label: 'vs S&P 500', value: `${(totalReturnPct - sp500ReturnPct) >= 0 ? '+' : ''}${(totalReturnPct - sp500ReturnPct).toFixed(1)}%`, color: (totalReturnPct - sp500ReturnPct) >= 0 ? 'text-emerald-400' : 'text-red-400' },
-            { label: 'Duration', value: `${params.durationMonths} months`, color: 'text-gray-300' },
+            { label: 'Duration', value: params.durationMonths >= 12 ? `${(params.durationMonths / 12).toFixed(params.durationMonths % 12 ? 1 : 0)} years` : `${params.durationMonths} months`, color: 'text-gray-300' },
             { label: 'Volatility', value: `${params.volatility}%`, color: 'text-amber-400' },
             { label: 'Positions', value: `${positions.length}`, color: 'text-gray-300' },
             { label: 'Tech Weight', value: `${Math.round(positions.reduce((s, p) => { const co = mockCompanies.find(c => c.ticker === p.ticker); return s + (co ? co.scores.technologyExposure * p.allocation / 100 : 0); }, 0))}`, color: 'text-blue-400' },
+            { label: 'Vest Events', value: `${vestingEvents.filter(e => e.monthOffset <= params.durationMonths).length}`, color: 'text-violet-400' },
           ].map(m => (
             <div key={m.label} className="card-compact p-3">
               <p className="text-[10px] text-gray-500">{m.label}</p>
@@ -302,6 +493,59 @@ export default function SimulatorPage() {
           <p className="text-[10px] text-gray-600 text-center">
             Total allocation: {positions.reduce((s, p) => s + p.allocation, 0)}%
           </p>
+        </div>
+      )}
+
+      {view === 'vesting' && (
+        <div className="space-y-3">
+          {vestingEvents.length === 0 ? (
+            <div className="card p-8 text-center">
+              <p className="text-gray-400 text-sm font-medium mb-1">No upcoming vesting events</p>
+              <p className="text-gray-600 text-xs">Add RSU grants in Portfolio to see vesting projections</p>
+            </div>
+          ) : (
+            <>
+              <div className="card p-4">
+                <SectionHeader title="Upcoming RSU Vesting" />
+                <div className="space-y-2 max-h-80 overflow-y-auto">
+                  {vestingEvents
+                    .filter(e => e.monthOffset <= params.durationMonths)
+                    .map((e, i) => {
+                      const pos = positions.find(p => p.ticker === e.ticker);
+                      const estValue = (pos?.currentPrice ?? 0) * e.shares;
+                      return (
+                        <div key={i} className="flex items-center gap-3 text-xs py-1.5 border-b border-white/5 last:border-0">
+                          <span className={`w-2 h-2 rounded-full ${e.isCliff ? 'bg-accent-400' : 'bg-emerald-500'}`} />
+                          <span className="text-gray-400 w-20">{e.date}</span>
+                          <span className="font-semibold">{e.ticker}</span>
+                          <span className={`${e.isCliff ? 'text-accent-400' : ''}`}>
+                            +{e.shares} shares{e.isCliff ? ' (cliff)' : ''}
+                          </span>
+                          <span className="text-gray-500 ml-auto">~${estValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
+                        </div>
+                      );
+                    })}
+                </div>
+              </div>
+              <div className="card p-4">
+                <div className="flex justify-between text-xs">
+                  <span className="text-gray-400">Total vesting in projection</span>
+                  <span className="text-emerald-400 font-semibold">
+                    +{vestingEvents.filter(e => e.monthOffset <= params.durationMonths).reduce((s, e) => s + e.shares, 0)} shares
+                  </span>
+                </div>
+                <div className="flex justify-between text-xs mt-1">
+                  <span className="text-gray-400">Est. vesting value (current prices)</span>
+                  <span className="text-white font-semibold">
+                    ${vestingEvents
+                      .filter(e => e.monthOffset <= params.durationMonths)
+                      .reduce((s, e) => s + (positions.find(p => p.ticker === e.ticker)?.currentPrice ?? 0) * e.shares, 0)
+                      .toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                  </span>
+                </div>
+              </div>
+            </>
+          )}
         </div>
       )}
 

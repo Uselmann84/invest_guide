@@ -3,6 +3,7 @@ import { StockHolding, RsuGrant, TaxSettings, VestedRsuEvent } from '../models/t
 const HOLDINGS_KEY = 'invest_guide_holdings';
 const RSU_KEY = 'invest_guide_rsus';
 const TAX_KEY = 'invest_guide_tax';
+const WATCHLIST_KEY = 'invest_guide_watchlist';
 
 const DEFAULT_TAX: TaxSettings = {
   capitalGainsTaxRate: 20,
@@ -121,5 +122,19 @@ export const portfolioService = {
     const capGainTax = capitalGain * tax.capitalGainsTaxRate / 100;
     const currentValue = currentPrice * vestedShares;
     return { incomeValue, incomeTax, capitalGain, capGainTax, afterTax: currentValue - incomeTax - capGainTax };
+  },
+
+  // ---- Watchlist ----
+  getWatchlist(): string[] { return load<string[]>(WATCHLIST_KEY, []); },
+  saveWatchlist(tickers: string[]) { save(WATCHLIST_KEY, tickers); },
+  addToWatchlist(ticker: string) {
+    const all = this.getWatchlist();
+    if (!all.includes(ticker)) { all.push(ticker); this.saveWatchlist(all); }
+  },
+  removeFromWatchlist(ticker: string) {
+    this.saveWatchlist(this.getWatchlist().filter(t => t !== ticker));
+  },
+  isInWatchlist(ticker: string): boolean {
+    return this.getWatchlist().includes(ticker);
   },
 };

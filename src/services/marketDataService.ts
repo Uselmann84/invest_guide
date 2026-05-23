@@ -79,11 +79,11 @@ async function callOpenAI(prompt: string): Promise<string> {
     body: JSON.stringify({
       model: prefs.openaiModel || 'gpt-4o-mini',
       messages: [
-        { role: 'system', content: 'You are a financial analyst AI. Return ONLY valid JSON, no markdown, no code fences, no explanation.' },
+        { role: 'system', content: 'You are a financial analyst AI. Return ONLY valid JSON. The summary field must be a single JSON string with \\n for newlines. Do NOT use actual newlines inside JSON string values. No markdown code fences. No text outside the JSON object.' },
         { role: 'user', content: prompt },
       ],
       temperature: 0.4,
-      max_tokens: 2048,
+      max_tokens: 4096,
     }),
   });
 
@@ -98,16 +98,82 @@ async function callOpenAI(prompt: string): Promise<string> {
 
   const data = await res.json();
   const content = data.choices?.[0]?.message?.content || '';
-  return content.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+  // Strip code fences, leading/trailing whitespace, and any text before first {
+  let cleaned = content.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+  const firstBrace = cleaned.indexOf('{');
+  const lastBrace = cleaned.lastIndexOf('}');
+  if (firstBrace >= 0 && lastBrace > firstBrace) {
+    cleaned = cleaned.substring(firstBrace, lastBrace + 1);
+  }
+  return cleaned;
 }
 
 function isLive(): boolean {
   const prefs = userPreferenceService.getPreferences();
-  return prefs.liveMode && !!prefs.openaiApiKey;
+  return !!prefs.openaiApiKey;
 }
+
+function generateDataDrivenSummary(indexes: IndexData[], sectors: SectorPerformance[], companies: Company[]): string {
+  const spx = indexes.find(i => i.symbol === 'SPX');
+  const ndx = indexes.find(i => i.symbol === 'NDX');
+  const dji = indexes.find(i => i.symbol === 'DJI');
+
+  const advancing = indexes.filter(i => i.changePercent >= 0).length;
+  const declining = indexes.length - advancing;
+  const marketTone = advancing > declining ? 'positive' : advancing < declining ? 'negative' : 'mixed';
+
+  const topSectors = [...sectors].sort((a, b) => b.change - a.change);
+  const gainingSectors = topSectors.filter(s => s.change > 0).slice(0, 3);
+  const losingSectors = topSectors.filter(s => s.change < 0).slice(0, 2);
+
+  const topStocks = [...companies].sort((a, b) => b.changePercent - a.changePercent).slice(0, 3);
+  const worstStocks = [...companies].sort((a, b) => a.changePercent - b.changePercent).slice(0, 2);
+
+  let brief = '';
+
+  // Market overview
+  if (spx) {
+    const dir = spx.changePercent >= 0 ? 'advanced' : 'declined';
+    brief += `The **S&P 500** ${dir} ${Math.abs(spx.changePercent).toFixed(2)}% to ${spx.value.toLocaleString(undefined, { maximumFractionDigits: 0 })}. `;
+  }
+  if (ndx) {
+    const dir = ndx.changePercent >= 0 ? 'gained' : 'fell';
+    brief += `The **Nasdaq** ${dir} ${Math.abs(ndx.changePercent).toFixed(2)}%. `;
+  }
+  if (dji) {
+    const dir = dji.changePercent >= 0 ? 'rose' : 'dropped';
+    brief += `The **Dow** ${dir} ${Math.abs(dji.changePercent).toFixed(2)}%. `;
+  }
+
+  brief += `Overall market tone is **${marketTone}** with ${advancing} of ${indexes.length} major indexes advancing.\n\n`;
+
+  // Sector performance
+  if (gainingSectors.length > 0) {
+    brief += `**Leading sectors:** ${gainingSectors.map(s => `${s.name} (+${s.change.toFixed(1)}%)`).join(', ')}. `;
+  }
+  if (losingSectors.length > 0) {
+    brief += `**Lagging:** ${losingSectors.map(s => `${s.name} (${s.change.toFixed(1)}%)`).join(', ')}.\n\n`;
+  }
+
+  // Top movers
+  if (topStocks.length > 0) {
+    brief += `**Top movers:** ${topStocks.map(s => `${s.ticker} (${s.changePercent >= 0 ? '+' : ''}${s.changePercent.toFixed(1)}%)`).join(', ')}. `;
+  }
+  if (worstStocks.length > 0 && worstStocks[0].changePercent < 0) {
+    brief += `**Underperformers:** ${worstStocks.filter(s => s.changePercent < 0).map(s => `${s.ticker} (${s.changePercent.toFixed(1)}%)`).join(', ')}.`;
+  }
+
+  return brief.trim();
+}
+
+import { TechTrend } from '../models/types';
+import { mockTrends } from '../data/mockTrends';
+
+const TRENDS_PERSIST_KEY = 'invest_guide_ai_trends';
 
 export const marketDataService = {
   isLive,
+  generateSummary: generateDataDrivenSummary,
 
   // Fetch real index data from Yahoo Finance
   async fetchMarketData(): Promise<{ indexes: IndexData[]; sectors: SectorPerformance[] }> {
@@ -122,19 +188,46 @@ export const marketDataService = {
         yahooFinance.getIndexSparklines(),
       ]);
 
+      // Fetch 5Y daily chart for each index to compute real performance across all timeframes
+      const perfCharts: Record<string, { date: string; value: number }[]> = {};
+      await Promise.all(mockIndexes.map(async (mi) => {
+        try {
+          const data = await yahooFinance.getIndexChart(mi.symbol, '5Y');
+          if (data.length > 10) perfCharts[mi.symbol] = data;
+        } catch { /* skip */ }
+      }));
+
       const indexes: IndexData[] = mockIndexes.map(mi => {
         const yq = indexQuotes[mi.symbol];
         if (!yq) return mi;
         const realSparkline = indexSparklines[mi.symbol];
+
+        // Compute real performance from chart data
+        // 5Y chart has weekly data points (~260 points for 5 years)
+        const chart = perfCharts[mi.symbol];
+        let performance = { ...mi.performance, daily: Math.round(yq.regularMarketChangePercent * 100) / 100 };
+        if (chart && chart.length > 2) {
+          const current = chart[chart.length - 1].value;
+          const pctFrom = (weeksAgo: number) => {
+            const idx = Math.max(0, chart.length - 1 - weeksAgo);
+            return Math.round(((current - chart[idx].value) / chart[idx].value) * 10000) / 100;
+          };
+          performance = {
+            daily: Math.round(yq.regularMarketChangePercent * 100) / 100,
+            weekly: pctFrom(1),       // 1 week ago
+            monthly: pctFrom(4),      // ~4 weeks ago
+            sixMonth: pctFrom(26),    // ~26 weeks ago
+            yearly: pctFrom(52),      // ~52 weeks ago
+            fiveYear: Math.round(((current - chart[0].value) / chart[0].value) * 10000) / 100,
+          };
+        }
+
         return {
           ...mi,
           value: yq.regularMarketPrice,
           change: yq.regularMarketChange,
           changePercent: yq.regularMarketChangePercent,
-          performance: {
-            ...mi.performance,
-            daily: Math.round(yq.regularMarketChangePercent * 100) / 100,
-          },
+          performance,
           sparkline: realSparkline && realSparkline.length > 2
             ? realSparkline
             : generateSparkline(yq.regularMarketPrice, 30, yq.regularMarketChangePercent),
@@ -222,23 +315,30 @@ export const marketDataService = {
     if (cached && isFresh(cached.timestamp, 10 * 60 * 1000)) return cached; // 10 min cache for AI analysis
 
     try {
-      const indexSummary = indexes.map(i => `${i.symbol}: ${i.value.toFixed(0)} (${i.changePercent >= 0 ? '+' : ''}${i.changePercent.toFixed(2)}%)`).join(', ');
-      const sectorSummary = sectors.map(s => `${s.name}: ${s.change >= 0 ? '+' : ''}${s.change}%`).join(', ');
-      const stockSummary = topStocks.slice(0, 15).map(s => `${s.ticker}: $${s.price.toFixed(2)} (${s.change >= 0 ? '+' : ''}${s.change.toFixed(2)}%)`).join(', ');
+      const indexSummary = indexes.map(i => {
+        const p = i.performance;
+        return `${i.symbol} (${i.name}): ${i.value.toLocaleString()} (today ${i.changePercent >= 0 ? '+' : ''}${i.changePercent.toFixed(2)}%, 1W ${p.weekly >= 0 ? '+' : ''}${p.weekly.toFixed(1)}%, 1M ${p.monthly >= 0 ? '+' : ''}${p.monthly.toFixed(1)}%, 6M ${p.sixMonth >= 0 ? '+' : ''}${p.sixMonth.toFixed(1)}%, 1Y ${p.yearly >= 0 ? '+' : ''}${p.yearly.toFixed(1)}%)`;
+      }).join('\n');
+      const sectorSummary = sectors.map(s => `${s.name}: ${s.change >= 0 ? '+' : ''}${s.change.toFixed(1)}%`).join(', ');
+      const stockSummary = topStocks.slice(0, 20).map(s => `${s.ticker}: $${s.price.toFixed(2)} (${s.change >= 0 ? '+' : ''}${s.change.toFixed(2)}%)`).join(', ');
 
-      const json = await callOpenAI(`You are analyzing REAL current market data. Based on today's data below, return a JSON analysis.
+      const json = await callOpenAI(`You are a senior Wall Street market strategist writing a daily market brief for sophisticated retail investors. Analyze the REAL current market data below and provide a comprehensive analysis with actionable investment ideas.
 
-CURRENT MARKET DATA:
-Indexes: ${indexSummary}
-Sectors: ${sectorSummary}
-Top stocks: ${stockSummary}
+CURRENT MARKET DATA (${new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}):
+
+INDEXES:
+${indexSummary}
+
+SECTORS (today): ${sectorSummary}
+
+TOP STOCKS: ${stockSummary}
 
 Return this exact JSON structure:
 {
-  "sentiment": {"label": "Fear|Neutral|Greed|Extreme Fear|Extreme Greed", "value": NUMBER_0_100},
+  "sentiment": {"label": "Extreme Fear|Fear|Neutral|Greed|Extreme Greed", "value": NUMBER_0_100},
   "macroRisk": {"level": "Low|Moderate|Elevated|High|Extreme", "score": NUMBER_0_100,
     "factors": ["factor1", "factor2", "factor3", "factor4", "factor5"]},
-  "summary": "2-3 paragraph analysis of current market conditions. Use **bold** for key terms. Include what's driving markets, key risks, and outlook. Reference the actual index values and sector moves.",
+  "summary": "YOUR DEEP ANALYSIS HERE - see requirements below",
   "heatmap": [
     {"sector":"Technology","subsectors":[{"name":"Semiconductors","change":NUMBER},{"name":"Software","change":NUMBER},{"name":"Cloud","change":NUMBER},{"name":"Hardware","change":NUMBER}]},
     {"sector":"Healthcare","subsectors":[{"name":"Biotech","change":NUMBER},{"name":"Pharma","change":NUMBER},{"name":"Med Devices","change":NUMBER},{"name":"Services","change":NUMBER}]},
@@ -247,21 +347,73 @@ Return this exact JSON structure:
   ]
 }
 
-Base your analysis on the real data provided. The sentiment and risk assessments should reflect actual current market conditions.`);
+SUMMARY REQUIREMENTS — use this exact format with section headers and bullet points:
+
+## Market Overview
+Brief 1-2 sentence overview of today's session.
+• Key index move 1 with actual numbers
+• Key index move 2
+• What drove the session
+
+## Sector & Themes
+• Leading sectors with % moves and why
+• Lagging sectors and reasons
+• Dominant investment themes (AI, rate cuts, earnings, etc.)
+
+## Investment Opportunities
+• **TICKER1** — why this is interesting right now (price, catalyst)
+• **TICKER2** — opportunity thesis
+• **TICKER3** — what to watch for
+• Sector or thematic plays worth exploring
+
+## Risks & Caution
+• Specific risk 1
+• Specific risk 2
+• Overextended areas or warning signals
+
+## Outlook & Positioning
+• Short-term view (1-2 weeks)
+• Medium-term view (1-3 months)
+• Suggested positioning: aggressive / balanced / defensive
+
+Use **bold** for tickers and key terms. Use • for bullet points. Keep each bullet concise (1 line). Base ALL analysis on the real data provided. Reference actual numbers. This is for educational purposes, not financial advice.
+
+CRITICAL: The summary value must be a valid JSON string. Use \\n for newlines, NOT actual line breaks inside the string. Escape any quotes with \\".`);
 
       let parsed;
       try {
         parsed = JSON.parse(json);
       } catch {
-        console.error('OpenAI returned invalid JSON:', json.substring(0, 500));
-        throw new Error('AI returned invalid response. Try again.');
+        // Try to fix common JSON issues: unescaped newlines in string values
+        try {
+          // Replace literal newlines inside JSON string values with \n
+          const fixed = json.replace(/(["]:[ ]*")([\s\S]*?)("[ ]*[,}])/g, (m, pre, content, post) => {
+            return pre + content.replace(/\n/g, '\\n').replace(/\r/g, '') + post;
+          });
+          parsed = JSON.parse(fixed);
+        } catch {
+          console.error('OpenAI returned invalid JSON (first 1000 chars):', json.substring(0, 1000));
+          // Last resort: try to extract summary text directly from the response
+          const summaryMatch = json.match(/"summary"\s*:\s*"([\s\S]*?)"\s*[,}]/);
+          parsed = {
+            sentiment: mockSentiment,
+            macroRisk: mockMacroRisk,
+            summary: summaryMatch ? summaryMatch[1].replace(/\\n/g, '\n').replace(/\\"/g, '"') : null,
+            heatmap: mockHeatmapData,
+          };
+        }
+      }
+
+      // Validate we got something useful
+      if (!parsed?.summary) {
+        throw new Error('AI response missing summary. Try refreshing again.');
       }
 
       const result: AnalysisCache = {
         timestamp: Date.now(),
         sentiment: parsed.sentiment || mockSentiment,
         macroRisk: parsed.macroRisk || mockMacroRisk,
-        summary: parsed.summary || mockMarketSummary,
+        summary: parsed.summary.replace(/\\n/g, '\n'),
         heatmap: parsed.heatmap || mockHeatmapData,
       };
       setCache(ANALYSIS_CACHE_KEY, result);
@@ -269,13 +421,8 @@ Base your analysis on the real data provided. The sentiment and risk assessments
     } catch (e: any) {
       console.error('AI analysis failed:', e);
       if (cached) return cached;
-      return {
-        timestamp: Date.now(),
-        sentiment: mockSentiment,
-        macroRisk: mockMacroRisk,
-        summary: `⚠️ AI Analysis Error: ${e.message || 'Unknown error'}\n\nFalling back to demo data. Check Settings → Live Mode & API.\n\n${mockMarketSummary}`,
-        heatmap: mockHeatmapData,
-      };
+      // Don't return mock summary — keep whatever data-driven summary is already showing
+      throw e;
     }
   },
 
@@ -302,5 +449,70 @@ Base your analysis on the real data provided. The sentiment and risk assessments
     localStorage.removeItem(CACHE_KEY);
     localStorage.removeItem(STOCK_CACHE_KEY);
     localStorage.removeItem(ANALYSIS_CACHE_KEY);
+  },
+
+  getPersistedTrends(): { trends: TechTrend[]; generatedAt: number } | null {
+    try {
+      const stored = localStorage.getItem(TRENDS_PERSIST_KEY);
+      if (stored) return JSON.parse(stored);
+    } catch { /* ignore */ }
+    return null;
+  },
+
+  async fetchTrendsAnalysis(currentTrends: TechTrend[]): Promise<{ trends: TechTrend[]; generatedAt: number }> {
+    if (!isLive()) throw new Error('API key required for AI analysis');
+
+    const prefs = userPreferenceService.getPreferences();
+    const trendNames = currentTrends.map(t => `${t.name} (${t.icon})`).join(', ');
+
+    const prompt = `Update scores for these tech trends based on current market: ${trendNames}.
+
+For each, return: id, scores (0-100: momentumScore, marketDemandScore, investmentAttentionScore, publicHypeScore, realRevenueImpactScore), keyCompanies (5 tickers), emergingCompanies (3 tickers), risks (3 short items), description (1 sentence).
+
+Keep longTermImpact and historicalComparison unchanged. Return ONLY valid JSON, no newlines in string values.
+Format: {"trends":[{"id":"ai","momentumScore":N,...}]}`;
+
+    const json = await callOpenAI(prompt);
+
+    let parsed;
+    try {
+      const firstBrace = json.indexOf('{');
+      const lastBrace = json.lastIndexOf('}');
+      const cleaned = firstBrace >= 0 && lastBrace > firstBrace ? json.substring(firstBrace, lastBrace + 1) : json;
+      parsed = JSON.parse(cleaned);
+    } catch {
+      // Try fixing unescaped newlines
+      try {
+        const fixed = json.replace(/(":\s*")([^"]*?)("\s*[,}])/gs, (_, pre, content, post) =>
+          pre + content.replace(/\n/g, '\\n').replace(/\r/g, '') + post
+        );
+        const firstBrace = fixed.indexOf('{');
+        const lastBrace = fixed.lastIndexOf('}');
+        parsed = JSON.parse(fixed.substring(firstBrace, lastBrace + 1));
+      } catch {
+        throw new Error('AI returned invalid response. Try again.');
+      }
+    }
+
+    if (!parsed?.trends?.length) throw new Error('AI response missing trends data');
+
+    // Merge AI data with existing trends (keep any fields AI didn't return)
+    const updatedTrends: TechTrend[] = currentTrends.map(existing => {
+      const ai = parsed.trends.find((t: any) => t.id === existing.id || t.name?.toLowerCase() === existing.name?.toLowerCase());
+      if (!ai) return existing;
+      return { ...existing, ...ai, id: existing.id, icon: ai.icon || existing.icon };
+    });
+
+    // Add any new trends from AI that don't exist in current list (dedupe by name)
+    parsed.trends.forEach((ai: any) => {
+      if (!updatedTrends.find(t => t.id === ai.id || t.name?.toLowerCase() === ai.name?.toLowerCase())) {
+        updatedTrends.push(ai);
+      }
+    });
+
+    const now = Date.now();
+    const result = { trends: updatedTrends, generatedAt: now };
+    try { localStorage.setItem(TRENDS_PERSIST_KEY, JSON.stringify(result)); } catch { /* full */ }
+    return result;
   },
 };

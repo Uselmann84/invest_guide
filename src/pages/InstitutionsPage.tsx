@@ -129,7 +129,19 @@ export default function InstitutionsPage() {
 
   const handleTickerClick = (ticker: string) => {
     const company = companies.find(c => c.ticker === ticker);
-    if (company) setSelectedCompany(company);
+    if (company) { setSelectedCompany(company); return; }
+    // Build a stub Company from institution data so we can still open the detail (chart fetches live Yahoo data)
+    const allHoldings = mockInstitutions.flatMap(i => [...i.topHoldings, ...i.recentBuys, ...i.recentSells]);
+    const match = allHoldings.find(h => h.ticker === ticker);
+    const stub: Company = {
+      ticker, name: match?.name ?? ticker, sector: '—', industry: '—',
+      marketCap: 0, marketCapLabel: '—', price: 0, change: 0, changePercent: 0,
+      revenueGrowth: 0, profitMargin: 0, debtToEquity: 0, analystSentiment: 'Hold',
+      institutionalOwnership: 0, insiderActivity: 'Neutral', relativeStrength: 0,
+      aiTrendConnection: [], sparkline: [], summary: '',
+      scores: { momentum: 0, fundamental: 0, valuation: 0, institutionalInterest: 0, technologyExposure: 0, marketDemand: 0, risk: 0, opportunity: 0, userFit: 0, overall: 0 },
+    };
+    setSelectedCompany(stub);
   };
 
   if (selectedCompany) return <CompanyDetail company={selectedCompany} onClose={() => setSelectedCompany(null)} />;

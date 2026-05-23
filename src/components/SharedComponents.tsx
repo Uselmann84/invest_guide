@@ -38,22 +38,34 @@ export function MiniSparkline({ data, color = '#f97316', height = 32 }: { data: 
 }
 
 export function SentimentGauge({ value, label }: { value: number; label: string }) {
-  const angle = (value / 100) * 180 - 90;
+  // Needle angle: value 0 → points left (180°), value 100 → points right (0°)
+  const angleRad = ((1 - value / 100) * Math.PI);
   const gaugeColor = value >= 70 ? '#10b981' : value >= 40 ? '#f59e0b' : '#ef4444';
+  const desc = value >= 80 ? 'Extreme optimism — markets may be overbought'
+    : value >= 60 ? 'Investors are risk-on, buying aggressively'
+    : value >= 40 ? 'Balanced sentiment — no strong bias'
+    : value >= 20 ? 'Caution rising — investors are selling'
+    : 'Panic selling — markets may be oversold';
 
   return (
     <div className="flex flex-col items-center">
-      <svg width="120" height="70" viewBox="0 0 120 70">
-        <path d="M 10 65 A 50 50 0 0 1 110 65" fill="none" stroke="rgba(255,255,255,0.1)" strokeWidth="8" strokeLinecap="round" />
-        <path d="M 10 65 A 50 50 0 0 1 110 65" fill="none" stroke={gaugeColor} strokeWidth="8" strokeLinecap="round"
+      <p className="text-[10px] text-gray-500 mb-1">Market Sentiment</p>
+      <svg width="130" height="80" viewBox="0 0 130 80">
+        <path d="M 15 70 A 50 50 0 0 1 115 70" fill="none" stroke="rgba(255,255,255,0.1)" strokeWidth="8" strokeLinecap="round" />
+        <path d="M 15 70 A 50 50 0 0 1 115 70" fill="none" stroke={gaugeColor} strokeWidth="8" strokeLinecap="round"
           strokeDasharray={`${(value / 100) * 157} 157`} />
-        <line x1="60" y1="65" x2={60 + 35 * Math.cos((angle * Math.PI) / 180)} y2={65 + 35 * Math.sin((angle * Math.PI) / 180)}
+        <line x1="65" y1="70" x2={65 + 35 * Math.cos(angleRad)} y2={70 - 35 * Math.sin(angleRad)}
           stroke="white" strokeWidth="2" strokeLinecap="round" />
-        <circle cx="60" cy="65" r="3" fill="white" />
+        <circle cx="65" cy="70" r="3" fill="white" />
+        {/* Labels outside the arc */}
+        <text x="4" y="78" fontSize="8" fill="#ef4444" textAnchor="start">Fear</text>
+        <text x="65" y="10" fontSize="8" fill="#f59e0b" textAnchor="middle">Neutral</text>
+        <text x="126" y="78" fontSize="8" fill="#10b981" textAnchor="end">Greed</text>
       </svg>
       <div className="text-center -mt-1">
         <span className="text-lg font-bold">{value}</span>
-        <p className="text-xs text-gray-400">{label}</p>
+        <p className="text-xs font-medium" style={{ color: gaugeColor }}>{label}</p>
+        <p className="text-[9px] text-gray-500 mt-0.5 max-w-[110px] leading-tight">{desc}</p>
       </div>
     </div>
   );

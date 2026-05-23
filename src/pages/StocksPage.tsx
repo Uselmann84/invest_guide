@@ -1,10 +1,12 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useCallback, useRef } from 'react';
 import { riskEngine } from '../services/riskEngine';
 import { historicalPriceService } from '../services/historicalPriceService';
+import { portfolioService } from '../services/portfolioService';
 import { ChangeIndicator, MiniSparkline, ScoreBar, SectionHeader, TabBar, Disclaimer } from '../components/SharedComponents';
 import { Company, Timeframe, PricePoint } from '../models/types';
 import { LineChart, Line, XAxis, YAxis, ResponsiveContainer, Tooltip, CartesianGrid, Area, AreaChart } from 'recharts';
 import { useMarketData } from '../components/MarketDataContext';
+import { yahooFinance } from '../services/yahooFinance';
 
 const rankTabs = [
   { id: 'overall', label: 'Top Ranked' },
@@ -14,14 +16,83 @@ const rankTabs = [
   { id: 'risk', label: 'Lowest Risk' },
 ];
 
-export function CompanyDetail({ company, onClose }: { company: Company; onClose: () => void }) {
+export function CompanyDetail({ company: initialCompany, onClose, onWatchlistChange }: { company: Company; onClose: () => void; onWatchlistChange?: () => void }) {
+  const [company, setCompany] = useState(initialCompany);
+  const [inWatchlist, setInWatchlist] = useState(() => portfolioService.isInWatchlist(company.ticker));
+
+  // Fetch live profile data for stub companies (price === 0 means stub)
+  React.useEffect(() => {
+    if (initialCompany.price !== 0) return;
+    let cancelled = false;
+    yahooFinance.getProfile(initialCompany.ticker).then(p => {
+      if (cancelled || !p.price) return;
+      const yearRet = Math.round((p.yearlyReturn ?? 0) * 10) / 10;
+      const chgPct = p.changePercent ?? 0;
+      const hi = p.fiftyTwoWeekHigh ?? 0;
+      const lo = p.fiftyTwoWeekLow ?? 0;
+      // Derive scores from available data (0-100 scale)
+      const clamp = (v: number) => Math.max(5, Math.min(95, Math.round(v)));
+      const momentum = clamp(50 + chgPct * 5 + yearRet * 0.3);
+      const priceVs52wk = hi > 0 ? ((p.price! - lo) / (hi - lo)) * 100 : 50;
+      const fundamental = clamp(35 + priceVs52wk * 0.3 + (yearRet > 0 ? 15 : 0));
+      const valuation = clamp(60 - priceVs52wk * 0.2);
+      const risk = clamp(50 - yearRet * 0.3 + (priceVs52wk > 90 ? 15 : 0));
+      const opportunity = clamp(40 + yearRet * 0.4 + (priceVs52wk < 40 ? 15 : 0));
+      const overall = clamp((momentum + fundamental + valuation + opportunity) / 4);
+      const sentiment: Company['analystSentiment'] = overall >= 70 ? 'Buy' : overall >= 55 ? 'Hold' : 'Sell';
+      setCompany(prev => ({
+        ...prev,
+        name: p.name ?? prev.name,
+        price: p.price ?? 0,
+        change: p.change ?? 0,
+        changePercent: chgPct,
+        sector: p.sector ?? prev.sector,
+        industry: p.industry ?? prev.industry,
+        marketCap: p.marketCap ?? 0,
+        marketCapLabel: p.marketCapLabel ?? '—',
+        revenueGrowth: yearRet, // yearly price return as proxy
+        profitMargin: Math.round(priceVs52wk * 10) / 10, // 52wk position as proxy
+        debtToEquity: 0,
+        summary: p.summary ?? '',
+        analystSentiment: sentiment,
+        insiderActivity: 'Neutral',
+        scores: {
+          overall, momentum, fundamental, valuation, risk, opportunity,
+          institutionalInterest: clamp(50 + (p.marketCap && p.marketCap > 50e9 ? 20 : p.marketCap && p.marketCap > 10e9 ? 10 : 0)),
+          technologyExposure: clamp(p.sector === 'Technology' ? 75 : p.sector === 'Financial Services' ? 55 : p.sector === 'Healthcare' ? 55 : 40),
+          marketDemand: clamp(45 + yearRet * 0.4),
+          userFit: clamp(overall * 0.9),
+        },
+      }));
+    });
+    return () => { cancelled = true; };
+  }, [initialCompany.ticker, initialCompany.price]);
+
+  const toggleWatchlist = () => {
+    if (inWatchlist) {
+      portfolioService.removeFromWatchlist(company.ticker);
+    } else {
+      portfolioService.addToWatchlist(company.ticker);
+    }
+    setInWatchlist(!inWatchlist);
+    onWatchlistChange?.();
+  };
   const risk = riskEngine.assessCompanyRisk(company);
   const { fetchHistory } = useMarketData();
-  const [timeframe, setTimeframe] = useState<Timeframe>('1M');
+  const [timeframe, setTimeframe] = useState<Timeframe>('1D');
   const [liveData, setLiveData] = useState<PricePoint[]>([]);
   const [loading, setLoading] = useState(false);
   const fallbackData = useMemo(() => historicalPriceService.getHistory(company.ticker, timeframe, company.price, company.changePercent), [company.ticker, timeframe, company.price, company.changePercent]);
-  const priceData = liveData.length > 0 ? liveData : fallbackData;
+  const rawData = liveData.length > 0 ? liveData : fallbackData;
+
+  // For 1D, prepend previous close so chart baseline matches daily change %
+  const priceData = useMemo(() => {
+    if (timeframe === '1D' && rawData.length > 0 && company.price > 0) {
+      const prevClose = company.price - company.change;
+      if (prevClose > 0) return [{ date: 'Prev Close', value: Math.round(prevClose * 100) / 100 }, ...rawData];
+    }
+    return rawData;
+  }, [rawData, timeframe, company.price, company.change]);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -35,15 +106,21 @@ export function CompanyDetail({ company, onClose }: { company: Company; onClose:
   const timeframes: { id: Timeframe; label: string }[] = [
     { id: '1D', label: '1D' }, { id: '1W', label: '1W' }, { id: '1M', label: '1M' },
     { id: '6M', label: '6M' }, { id: '1Y', label: '1Y' }, { id: '5Y', label: '5Y' },
+    { id: '10Y', label: '10Y' }, { id: 'ALL', label: 'Max' },
   ];
-  const priceChange = priceData.length >= 2 ? priceData[priceData.length - 1].value - priceData[0].value : 0;
-  const priceChangePercent = priceData.length >= 2 ? (priceChange / priceData[0].value) * 100 : 0;
-  const chartColor = priceChange >= 0 ? '#10b981' : '#ef4444';
+  const chartChange = priceData.length >= 2 ? priceData[priceData.length - 1].value - priceData[0].value : 0;
+  const chartChangePercent = priceData.length >= 2 ? (chartChange / priceData[0].value) * 100 : 0;
+  const chartColor = chartChange >= 0 ? '#10b981' : '#ef4444';
 
   return (
-    <div className="fixed inset-0 z-50 bg-surface-950/95 overflow-y-auto">
-      <div className="max-w-lg mx-auto p-4 pt-[env(safe-area-inset-top,16px)] pb-24">
-        <button onClick={onClose} className="text-gray-400 hover:text-white mb-4 text-sm mt-2">← Back</button>
+    <div className="fixed inset-0 z-50 bg-surface-950 overflow-y-auto">
+      {/* Fixed back button bar */}
+      <div className="fixed top-0 left-0 right-0 z-50 bg-surface-950/95 backdrop-blur-xl" style={{ paddingTop: 'env(safe-area-inset-top, 16px)' }}>
+        <div className="max-w-lg mx-auto px-4 py-2">
+          <button onClick={onClose} className="text-gray-400 hover:text-white text-sm">← Back</button>
+        </div>
+      </div>
+      <div className="max-w-lg mx-auto p-4 pb-24" style={{ paddingTop: 'calc(env(safe-area-inset-top, 16px) + 44px)' }}>
 
         <div className="flex items-center gap-3 mb-4">
           <div className="w-12 h-12 rounded-2xl bg-accent-500/20 flex items-center justify-center text-lg font-bold text-accent-400">
@@ -55,16 +132,19 @@ export function CompanyDetail({ company, onClose }: { company: Company; onClose:
           </div>
           <div className="ml-auto text-right">
             <p className="text-lg font-bold">${company.price.toFixed(2)}</p>
-            <ChangeIndicator value={priceChangePercent} />
+            <ChangeIndicator value={chartChangePercent} />
           </div>
         </div>
+        {company.summary && (
+          <p className="text-xs text-gray-400 leading-relaxed mb-4 -mt-2">{company.summary}</p>
+        )}
 
         {/* Price Chart */}
         <div className="card p-4 mb-4">
           <div className="flex items-center justify-between mb-2">
             <div>
-              <span className={`text-sm font-semibold ${priceChange >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                {priceChange >= 0 ? '+' : ''}{priceChange.toFixed(2)} ({priceChangePercent >= 0 ? '+' : ''}{priceChangePercent.toFixed(2)}%)
+              <span className={`text-sm font-semibold ${chartChange >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                {chartChange >= 0 ? '+' : ''}{chartChange.toFixed(2)} ({chartChangePercent >= 0 ? '+' : ''}{chartChangePercent.toFixed(2)}%)
               </span>
               <span className="text-[10px] text-gray-500 ml-2">{timeframe}</span>
             </div>
@@ -113,7 +193,17 @@ export function CompanyDetail({ company, onClose }: { company: Company; onClose:
 
         {/* Key metrics */}
         <div className="grid grid-cols-3 gap-2 mb-4">
-          {[
+          {(initialCompany.price === 0 ? [
+            { label: 'Market Cap', value: company.marketCapLabel },
+            { label: 'Sector', value: company.sector },
+            { label: 'Industry', value: company.industry },
+            { label: '1Y Return', value: `${company.revenueGrowth > 0 ? '+' : ''}${company.revenueGrowth}%` },
+            { label: '52W Position', value: `${company.profitMargin}%` },
+            { label: '52W High', value: company.scores.overall > 0 ? `$${((company.price / (1 - company.profitMargin/100)) || 0).toFixed(0)}` : '—' },
+            { label: 'Analyst', value: company.analystSentiment },
+            { label: 'Exchange', value: 'NYSE/NASDAQ' },
+            { label: 'Day Change', value: `${company.changePercent >= 0 ? '+' : ''}${company.changePercent.toFixed(2)}%` },
+          ] : [
             { label: 'Market Cap', value: company.marketCapLabel },
             { label: 'Sector', value: company.sector },
             { label: 'Industry', value: company.industry },
@@ -123,7 +213,7 @@ export function CompanyDetail({ company, onClose }: { company: Company; onClose:
             { label: 'Analyst', value: company.analystSentiment },
             { label: 'Inst. Ownership', value: `${company.institutionalOwnership}%` },
             { label: 'Insider Activity', value: company.insiderActivity },
-          ].map(m => (
+          ]).map(m => (
             <div key={m.label} className="card-compact p-2.5">
               <p className="text-[10px] text-gray-500">{m.label}</p>
               <p className="text-xs font-medium text-white mt-0.5">{m.value}</p>
@@ -211,13 +301,117 @@ export function CompanyDetail({ company, onClose }: { company: Company; onClose:
         </div>
 
         {/* Summary */}
-        <div className="card p-4 mb-4">
-          <SectionHeader title="AI Summary" />
-          <p className="text-sm text-gray-300 leading-relaxed">{company.summary}</p>
-        </div>
+        {company.summary && (
+          <div className="card p-4 mb-4">
+            <SectionHeader title="AI Summary" />
+            <p className="text-sm text-gray-300 leading-relaxed">{company.summary}</p>
+          </div>
+        )}
 
         <Disclaimer />
       </div>
+    </div>
+  );
+}
+
+// ---- Watchlist Drag-to-Reorder ----
+function WatchlistDragList({ companies, watchlist, onReorder, onSelect }: {
+  companies: Company[];
+  watchlist: string[];
+  onReorder: (newOrder: string[]) => void;
+  onSelect: (c: Company) => void;
+}) {
+  const [dragIdx, setDragIdx] = useState<number | null>(null);
+  const [currentOrder, setCurrentOrder] = useState<string[]>(watchlist);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const startY = useRef(0);
+  const dragStartIdx = useRef(0);
+
+  // Keep currentOrder in sync when watchlist changes externally
+  const prevWatchlist = useRef(watchlist);
+  if (prevWatchlist.current !== watchlist) {
+    prevWatchlist.current = watchlist;
+    setCurrentOrder(watchlist);
+  }
+
+  const ordered = currentOrder.map(t => companies.find(c => c.ticker === t)).filter(Boolean) as Company[];
+
+  const handleTouchStart = (idx: number, e: React.TouchEvent) => {
+    e.preventDefault();
+    startY.current = e.touches[0].clientY;
+    dragStartIdx.current = idx;
+    setDragIdx(idx);
+    setCurrentOrder(watchlist);
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (dragIdx === null || !containerRef.current) return;
+    e.preventDefault();
+    const children = containerRef.current.children;
+    if (children.length === 0) return;
+    const itemH = (children[0] as HTMLElement).getBoundingClientRect().height + 8;
+    const dy = e.touches[0].clientY - startY.current;
+    const offset = Math.round(dy / itemH);
+    const newIdx = Math.max(0, Math.min(ordered.length - 1, dragStartIdx.current + offset));
+
+    if (newIdx !== dragIdx) {
+      const reordered = [...watchlist];
+      const [moved] = reordered.splice(dragStartIdx.current, 1);
+      reordered.splice(newIdx, 0, moved);
+      setCurrentOrder(reordered);
+      setDragIdx(newIdx);
+    }
+  };
+
+  const handleTouchEnd = () => {
+    if (dragIdx !== null) {
+      onReorder(currentOrder);
+    }
+    setDragIdx(null);
+  };
+
+  return (
+    <div ref={containerRef} className="space-y-2">
+      {ordered.map((c, i) => {
+        const isDragging = dragIdx === i;
+        return (
+          <div
+            key={c.ticker}
+            className={`card w-full text-left px-4 py-3 flex items-center gap-3 transition-transform ${
+              isDragging ? 'bg-accent-500/10 border-accent-500/30 scale-[1.02] shadow-lg z-10 relative' : ''
+            }`}
+          >
+            <button onClick={() => onSelect(c)} className="flex items-center gap-3 flex-1 min-w-0">
+              <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-accent-500/20 to-accent-500/5 flex items-center justify-center text-xs font-bold text-accent-400 shrink-0">
+                {c.ticker.slice(0, 2)}
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-semibold">{c.ticker}</span>
+                  <span className="text-sm font-mono">${c.price.toFixed(2)}</span>
+                </div>
+                <div className="flex items-center justify-between mt-0.5">
+                  <span className="text-[10px] text-gray-500 truncate">{c.name} · {c.marketCapLabel}</span>
+                  <ChangeIndicator value={c.changePercent} />
+                </div>
+              </div>
+            </button>
+            {/* Drag handle on right */}
+            <div
+              className="shrink-0 touch-none px-1 py-3"
+              onTouchStart={(e) => handleTouchStart(i, e)}
+              onTouchMove={handleTouchMove}
+              onTouchEnd={handleTouchEnd}
+            >
+              <div className="flex flex-col gap-[3px]">
+                <div className="w-5 h-[2px] bg-gray-500 rounded" />
+                <div className="w-5 h-[2px] bg-gray-500 rounded" />
+                <div className="w-5 h-[2px] bg-gray-500 rounded" />
+              </div>
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -227,6 +421,35 @@ export default function StocksPage() {
   const [search, setSearch] = useState('');
   const [rankBy, setRankBy] = useState('overall');
   const [selected, setSelected] = useState<Company | null>(null);
+  const [activeTab, setActiveTab] = useState<'ranked' | 'watchlist' | 'movers'>('ranked');
+  const [watchlist, setWatchlist] = useState<string[]>(() => portfolioService.getWatchlist());
+  const [movers, setMovers] = useState<{ gainers: Company[]; active: Company[]; trending: Company[] }>({ gainers: [], active: [], trending: [] });
+  const [moversLoading, setMoversLoading] = useState(false);
+  const [moversSub, setMoversSub] = useState<'gainers' | 'active' | 'trending'>('gainers');
+
+  // Resolve a mover stock: use existing analyzed company if available, else create stub for live fetch
+  const resolveCompany = useCallback((mover: Company) => {
+    const existing = companies.find(c => c.ticker === mover.ticker);
+    if (existing) return existing;
+    // Create stub with price=0 so CompanyDetail triggers live profile fetch
+    return {
+      ...mover,
+      price: 0, change: 0, changePercent: 0,
+      scores: { momentum: 0, fundamental: 0, valuation: 0, institutionalInterest: 0, technologyExposure: 0, marketDemand: 0, risk: 0, opportunity: 0, userFit: 0, overall: 0 },
+    } as Company;
+  }, [companies]);
+
+  // Fetch market movers when tab is selected
+  React.useEffect(() => {
+    if (activeTab !== 'movers' || movers.gainers.length > 0) return;
+    setMoversLoading(true);
+    yahooFinance.getMarketMovers().then(data => {
+      setMovers(data);
+      setMoversLoading(false);
+    }).catch(() => setMoversLoading(false));
+  }, [activeTab]);
+
+  const refreshWatchlist = useCallback(() => setWatchlist(portfolioService.getWatchlist()), []);
 
   const filtered = useMemo(() => {
     let list = companies;
@@ -241,7 +464,11 @@ export default function StocksPage() {
     });
   }, [search, rankBy]);
 
-  if (selected) return <CompanyDetail company={selected} onClose={() => setSelected(null)} />;
+  const watchlistCompanies = useMemo(() => {
+    return companies.filter(c => watchlist.includes(c.ticker));
+  }, [companies, watchlist]);
+
+  if (selected) return <CompanyDetail company={selected} onClose={() => { setSelected(null); refreshWatchlist(); }} onWatchlistChange={refreshWatchlist} />;
 
   return (
     <div className="space-y-4">
@@ -250,46 +477,151 @@ export default function StocksPage() {
         <p className="text-xs text-gray-500 mt-0.5">AI-ranked companies across multiple factors</p>
       </div>
 
-      <input
-        type="text"
-        value={search}
-        onChange={e => setSearch(e.target.value)}
-        placeholder="Search ticker, name, or sector..."
-        className="input-field"
-      />
-
-      <TabBar tabs={rankTabs} active={rankBy} onChange={setRankBy} />
-
-      <div className="space-y-2">
-        {filtered.map((c, i) => (
-          <button
-            key={c.ticker}
-            onClick={() => setSelected(c)}
-            className="card-compact p-3 w-full text-left flex items-center gap-3 hover:border-accent-500/30 transition-all"
-          >
-            <div className="w-6 h-6 rounded-full bg-white/5 flex items-center justify-center text-[10px] font-bold text-gray-400">
-              {i + 1}
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2">
-                <span className="text-sm font-semibold">{c.ticker}</span>
-                <span className="text-xs text-gray-500 truncate">{c.name}</span>
-              </div>
-              <div className="flex items-center gap-2 mt-0.5">
-                <span className="text-xs font-mono text-white">${c.price.toFixed(2)}</span>
-                <span className="text-xs text-gray-600">•</span>
-                <span className="text-xs text-gray-400">{c.marketCapLabel}</span>
-                <span className="text-xs text-gray-600">•</span>
-                <ChangeIndicator value={c.changePercent} />
-              </div>
-            </div>
-            <div className="text-right shrink-0">
-              <div className="text-sm font-bold text-accent-400">{c.scores[rankBy as keyof typeof c.scores]}</div>
-              <p className="text-[10px] text-gray-500">{rankBy === 'risk' ? 'Risk' : 'Score'}</p>
-            </div>
-          </button>
-        ))}
+      {/* Top-level tab: Ranked vs Movers vs Watchlist */}
+      <div className="flex gap-1 bg-white/[0.03] rounded-xl p-1">
+        <button onClick={() => setActiveTab('ranked')}
+          className={`flex-1 py-2 rounded-lg text-xs font-semibold transition-all ${
+            activeTab === 'ranked' ? 'bg-white/10 text-white' : 'text-gray-500'
+          }`}>📊 Ranked</button>
+        <button onClick={() => setActiveTab('movers')}
+          className={`flex-1 py-2 rounded-lg text-xs font-semibold transition-all ${
+            activeTab === 'movers' ? 'bg-emerald-500/20 text-emerald-400' : 'text-gray-500'
+          }`}>🔥 Movers</button>
+        <button onClick={() => setActiveTab('watchlist')}
+          className={`flex-1 py-2 rounded-lg text-xs font-semibold transition-all ${
+            activeTab === 'watchlist' ? 'bg-accent-500/20 text-accent-400' : 'text-gray-500'
+          }`}>⭐ Watchlist{watchlist.length > 0 ? ` (${watchlist.length})` : ''}</button>
       </div>
+
+      {activeTab === 'ranked' && (
+        <>
+          <input
+            type="text"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Search ticker, name, or sector..."
+            className="input-field"
+          />
+
+          <TabBar tabs={rankTabs} active={rankBy} onChange={setRankBy} />
+
+          <div className="space-y-2">
+            {filtered.map((c, i) => {
+              const inWl = watchlist.includes(c.ticker);
+              return (
+              <div key={c.ticker} className="card-compact p-3 w-full flex items-center gap-3 hover:border-accent-500/30 transition-all">
+                <button onClick={() => setSelected(c)} className="flex items-center gap-3 flex-1 min-w-0 text-left">
+                  <div className="w-6 h-6 rounded-full bg-white/5 flex items-center justify-center text-[10px] font-bold text-gray-400">
+                    {i + 1}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-semibold">{c.ticker}</span>
+                      <span className="text-xs text-gray-500 truncate">{c.name}</span>
+                    </div>
+                    <div className="flex items-center gap-2 mt-0.5">
+                      <span className="text-xs font-mono text-white">${c.price.toFixed(2)}</span>
+                      <span className="text-xs text-gray-600">•</span>
+                      <span className="text-xs text-gray-400">{c.marketCapLabel}</span>
+                      <span className="text-xs text-gray-600">•</span>
+                      <ChangeIndicator value={c.changePercent} />
+                    </div>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <div className="text-sm font-bold text-accent-400">{c.scores[rankBy as keyof typeof c.scores]}</div>
+                    <p className="text-[10px] text-gray-500">{rankBy === 'risk' ? 'Risk' : 'Score'}</p>
+                  </div>
+                </button>
+                <button onClick={() => {
+                  if (inWl) portfolioService.removeFromWatchlist(c.ticker);
+                  else portfolioService.addToWatchlist(c.ticker);
+                  refreshWatchlist();
+                }} className={`text-lg shrink-0 px-1 transition-all ${inWl ? 'text-accent-400' : 'text-gray-600'}`}>
+                  {inWl ? '★' : '☆'}
+                </button>
+              </div>
+              );
+            })}
+          </div>
+        </>
+      )}
+
+      {activeTab === 'movers' && (
+        <>
+          <div className="flex gap-1 bg-white/[0.03] rounded-xl p-1">
+            {([['gainers', '📈 Gainers'], ['active', '📊 Most Active'], ['trending', '🔥 Trending']] as const).map(([key, label]) => (
+              <button key={key} onClick={() => setMoversSub(key)}
+                className={`flex-1 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                  moversSub === key ? 'bg-emerald-500/20 text-emerald-400' : 'text-gray-500'
+                }`}>{label}</button>
+            ))}
+          </div>
+          {moversLoading ? (
+            <div className="card p-8 text-center">
+              <div className="animate-pulse text-gray-400 text-sm">Loading live market data...</div>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {movers[moversSub].length === 0 ? (
+                <div className="card p-8 text-center">
+                  <p className="text-gray-400 text-sm">No data available</p>
+                </div>
+              ) : movers[moversSub].map((c, i) => (
+                <button key={c.ticker} onClick={() => setSelected(resolveCompany(c))} className="card-compact p-3 w-full flex items-center gap-3 hover:border-emerald-500/30 transition-all text-left">
+                  <div className="w-6 h-6 rounded-full bg-white/5 flex items-center justify-center text-[10px] font-bold text-gray-400">
+                    {i + 1}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-semibold">{c.ticker}</span>
+                      <span className="text-xs text-gray-500 truncate">{c.name}</span>
+                    </div>
+                    <div className="flex items-center gap-2 mt-0.5">
+                      <span className="text-xs font-mono text-white">${c.price.toFixed(2)}</span>
+                      <span className="text-xs text-gray-600">•</span>
+                      <span className="text-xs text-gray-400">{c.sector}</span>
+                      <span className="text-xs text-gray-600">•</span>
+                      <ChangeIndicator value={c.changePercent} />
+                    </div>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <ChangeIndicator value={c.changePercent} />
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+          <button onClick={() => {
+            setMovers({ gainers: [], active: [], trending: [] });
+            setMoversLoading(true);
+            yahooFinance.getMarketMovers().then(data => {
+              setMovers(data);
+              setMoversLoading(false);
+            }).catch(() => setMoversLoading(false));
+          }} className="w-full py-2 rounded-xl bg-white/5 text-gray-400 text-xs hover:bg-white/10 transition-all">
+            🔄 Refresh Market Data
+          </button>
+        </>
+      )}
+
+      {activeTab === 'watchlist' && (
+        <div className="space-y-2">
+          {watchlistCompanies.length === 0 ? (
+            <div className="card p-8 text-center">
+              <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-accent-500/20 to-amber-500/10 flex items-center justify-center text-2xl mx-auto mb-4">⭐</div>
+              <p className="text-gray-400 text-sm font-medium mb-1">No stocks in watchlist</p>
+              <p className="text-gray-600 text-xs">Tap a stock and use the ☆ Watch button to add it</p>
+            </div>
+          ) : (
+            <WatchlistDragList
+              companies={watchlistCompanies}
+              watchlist={watchlist}
+              onReorder={(newOrder) => { portfolioService.saveWatchlist(newOrder); refreshWatchlist(); }}
+              onSelect={setSelected}
+            />
+          )}
+        </div>
+      )}
     </div>
   );
 }

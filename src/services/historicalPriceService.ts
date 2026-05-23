@@ -26,10 +26,11 @@ const pointsForTimeframe: Record<Timeframe, number> = {
   '1D': 24,   // hourly
   '1W': 7,
   '1M': 30,
-  '6M': 26,   // weekly
-  '1Y': 52,
-  '5Y': 60,   // monthly
-  'ALL': 120,
+  '6M': 130,   // daily
+  '1Y': 252,   // daily
+  '5Y': 260,   // weekly
+  '10Y': 520,  // weekly
+  'ALL': 780,
 };
 
 export const historicalPriceService = {
