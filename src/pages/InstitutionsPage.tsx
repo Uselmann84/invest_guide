@@ -419,6 +419,12 @@ export default function InstitutionsPage() {
   const [selected, setSelected] = useState<Institution | null>(null);
   const [selectedCompany, setSelectedCompany] = useState<Company | null>(null);
   const [view, setView] = useState('flow');
+
+  useEffect(() => {
+    const handler = (e: Event) => { if ((e as CustomEvent).detail === 'institutions') { setSelected(null); setSelectedCompany(null); setView('flow'); } };
+    window.addEventListener('tab-reset', handler);
+    return () => window.removeEventListener('tab-reset', handler);
+  }, []);
   const [showChart, setShowChart] = useState(false);
   const [expandedStock, setExpandedStock] = useState<string | null>(null);
   const scrollPosRef = useRef(0);

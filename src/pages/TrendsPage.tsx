@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { mockTrends } from '../data/mockTrends';
 import { ScoreBar, SectionHeader, TabBar, Disclaimer } from '../components/SharedComponents';
 import { TechTrend, Company } from '../models/types';
@@ -96,6 +96,12 @@ export default function TrendsPage() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [selectedCompany, setSelectedCompany] = useState<Company | null>(null);
   const scrollPosRef = useRef(0);
+
+  useEffect(() => {
+    const handler = (e: Event) => { if ((e as CustomEvent).detail === 'trends') { setSelectedCompany(null); } };
+    window.addEventListener('tab-reset', handler);
+    return () => window.removeEventListener('tab-reset', handler);
+  }, []);
 
   const handleCompanyClick = (ticker: string) => {
     const company = companies.find(c => c.ticker === ticker);

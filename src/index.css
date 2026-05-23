@@ -9,9 +9,11 @@
   html {
     scroll-behavior: smooth;
     -webkit-font-smoothing: antialiased;
+    background-color: #060a14;
   }
   body {
     overscroll-behavior: none;
+    background-color: #060a14;
   }
   ::-webkit-scrollbar {
     width: 4px;

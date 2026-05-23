@@ -104,7 +104,7 @@ export function SectionHeader({ title, action, onAction }: { title: string; acti
   );
 }
 
-export const APP_VERSION = 'v1.2.1';
+export const APP_VERSION = 'v1.2.2';
 
 export function Disclaimer() {
   return (

@@ -10,6 +10,7 @@ import { Company } from '../models/types';
 import { AreaChart, Area, XAxis, YAxis, ResponsiveContainer, Tooltip, ReferenceLine, CartesianGrid } from 'recharts';
 import SimulatorPage from './SimulatorPage';
 import VirtualPortfolioPanel from './VirtualPortfolioPanel';
+import { useEdgeSwipeClose } from '../hooks/useEdgeSwipeClose';
 
 function fmt(n: number): string {
   return n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -233,6 +234,8 @@ function TaxSettingsForm({ tax, onChange }: { tax: TaxSettings; onChange: (t: Ta
 
 // ---- RSU Vesting Schedule Detail ----
 function RsuDetail({ grant, currentPrice, tax, onClose }: { grant: RsuGrant; currentPrice: number; tax: TaxSettings; onClose: () => void }) {
+  const rootRef = useRef<HTMLDivElement>(null);
+  useEdgeSwipeClose(rootRef, onClose);
   const schedule = portfolioService.computeVestingSchedule(grant);
   const vestedShares = portfolioService.getVestedShares(grant);
   const unvestedShares = grant.totalShares - vestedShares;
@@ -240,7 +243,7 @@ function RsuDetail({ grant, currentPrice, tax, onClose }: { grant: RsuGrant; cur
   const today = new Date().toISOString().slice(0, 10);
 
   return (
-    <div className="fixed inset-0 z-50 bg-surface-950/95 overflow-y-auto">
+    <div ref={rootRef} className="fixed inset-0 z-50 bg-surface-950/95 overflow-y-auto">
       <div className="max-w-lg mx-auto p-4 pt-[env(safe-area-inset-top,16px)] pb-24">
         <button onClick={onClose} className="text-gray-400 hover:text-white mb-4 text-sm mt-2">← Back</button>
         <h2 className="text-lg font-bold mb-1">{grant.ticker} RSU Grant</h2>
@@ -352,6 +355,12 @@ export default function PortfolioPage() {
   const [selectedCompany, setSelectedCompany] = useState<Company | null>(null);
   const scrollPosRef = useRef(0);
   const [view, setView] = useState('overview');
+
+  useEffect(() => {
+    const handler = (e: Event) => { if ((e as CustomEvent).detail === 'portfolio') { setSelectedCompany(null); setSelectedRsu(null); setView('overview'); } };
+    window.addEventListener('tab-reset', handler);
+    return () => window.removeEventListener('tab-reset', handler);
+  }, []);
   const [chartTf, setChartTf] = useState<Timeframe>('1M');
   const [chartMode, setChartMode] = useState<'value' | 'profit'>('value');
   const [chartData, setChartData] = useState<{ date: string; value: number; cost: number }[]>([]);
@@ -544,19 +553,33 @@ export default function PortfolioPage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-3">
-        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-accent-500 to-amber-500 flex items-center justify-center text-lg shadow-lg shadow-accent-500/20">💼</div>
-        <div>
-          <h1 className="text-xl font-bold">My Portfolio</h1>
-          <p className="text-xs text-gray-500 mt-0.5">Track your stocks & RSU grants</p>
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-accent-500 to-amber-500 flex items-center justify-center text-lg shadow-lg shadow-accent-500/20">💼</div>
+          <div>
+            <h1 className="text-xl font-bold">My Portfolio</h1>
+            <p className="text-xs text-gray-500 mt-0.5">Track your stocks & RSU grants</p>
+          </div>
         </div>
+        <button
+          onClick={() => setView(view === 'virtual' ? 'overview' : 'virtual')}
+          className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+            view === 'virtual'
+              ? 'bg-accent-500 text-white shadow-md shadow-accent-500/30'
+              : 'bg-white/5 text-gray-400 border border-white/10'
+          }`}
+        >
+          💭 Virtual
+        </button>
       </div>
 
-      <TabBar
-        tabs={[{ id: 'overview', label: 'Overview' }, { id: 'stocks', label: 'Stocks' }, { id: 'rsus', label: 'RSUs' }, { id: 'tax', label: 'Tax' }, { id: 'sim', label: 'Simulator' }, { id: 'virtual', label: 'Virtual' }]}
-        active={view}
-        onChange={setView}
-      />
+      {view !== 'virtual' && (
+        <TabBar
+          tabs={[{ id: 'overview', label: 'Overview' }, { id: 'stocks', label: 'Stocks' }, { id: 'rsus', label: 'RSUs' }, { id: 'tax', label: 'Tax' }, { id: 'sim', label: 'Simulator' }]}
+          active={view}
+          onChange={setView}
+        />
+      )}
 
       {/* ---- VIRTUAL PORTFOLIO ---- */}
       {view === 'virtual' && <VirtualPortfolioPanel />}

@@ -689,6 +689,12 @@ export default function StocksPage() {
   const openStock = useCallback((c: Company) => { scrollPosRef.current = window.scrollY; setSelected(c); }, []);
   const closeStock = useCallback(() => { setSelected(null); refreshWatchlist(); requestAnimationFrame(() => window.scrollTo(0, scrollPosRef.current)); }, [refreshWatchlist]);
 
+  useEffect(() => {
+    const handler = (e: Event) => { if ((e as CustomEvent).detail === 'stocks') { setSelected(null); } };
+    window.addEventListener('tab-reset', handler);
+    return () => window.removeEventListener('tab-reset', handler);
+  }, []);
+
   // Global ticker index — rebuilt when companies/customStocks change
   const stockIndex = useMemo(() => {
     const idx = buildStockIndex(allKnownCompanies);

@@ -225,14 +225,21 @@ function AppContent({ activeTab, setActiveTab, pages }: {
       </main>
 
       {/* Bottom navigation */}
-      <nav className="fixed bottom-0 left-0 right-0 bg-surface-900/95 backdrop-blur-xl border-t border-white/5 safe-bottom z-40">
+      <nav className="fixed bottom-0 left-0 right-0 bg-surface-900 backdrop-blur-xl border-t border-white/5 safe-bottom z-40" style={{ backgroundColor: '#0b1120' }}>
         <div className="max-w-lg mx-auto flex items-center justify-around px-1 py-1.5">
           {tabs.map(tab => {
             const active = activeTab === tab.id;
             return (
               <button
                 key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
+                onClick={() => {
+                  if (activeTab === tab.id) {
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                    window.dispatchEvent(new CustomEvent('tab-reset', { detail: tab.id }));
+                  } else {
+                    setActiveTab(tab.id);
+                  }
+                }}
                 className={`flex flex-col items-center gap-0.5 px-2 py-1 rounded-xl transition-all ${
                   active ? 'text-accent-400' : 'text-gray-500 hover:text-gray-300'
                 }`}

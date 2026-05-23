@@ -173,6 +173,12 @@ export default function DashboardPage() {
   const handleSetPerfPeriod = (t: Timeframe) => { setPerfPeriod(t); localStorage.setItem('dash_indexPeriod', t); };
   const handleSetStockPeriod = (t: Timeframe) => { setStockPeriod(t); localStorage.setItem('dash_stockPeriod', t); };
   const [selectedStock, setSelectedStock] = useState<Company | null>(null);
+
+  useEffect(() => {
+    const handler = (e: Event) => { if ((e as CustomEvent).detail === 'home') { setSelectedStock(null); setSelectedIndex(null); } };
+    window.addEventListener('tab-reset', handler);
+    return () => window.removeEventListener('tab-reset', handler);
+  }, []);
   const scrollPosRef = useRef(0);
   const openStock = useCallback((c: Company) => { scrollPosRef.current = window.scrollY; setSelectedStock(c); }, []);
   const closeStock = useCallback(() => { setSelectedStock(null); requestAnimationFrame(() => window.scrollTo(0, scrollPosRef.current)); }, []);
