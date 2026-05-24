@@ -53,14 +53,10 @@ function formatMarketCap(cap: number): string {
 }
 
 function generateSparkline(base: number, count: number, changePercent = 0): number[] {
-  // Generate a sparkline that trends in the correct direction based on changePercent
+  // Generate a simple linear sparkline based on actual change% — no randomness
   const startPrice = base / (1 + changePercent / 100);
   const step = (base - startPrice) / count;
-  return Array.from({ length: count }, (_, i) => {
-    const trend = startPrice + step * i;
-    // Small random noise (0.1% of price) for realism, but trend-consistent
-    return trend + (Math.random() - 0.5) * base * 0.002;
-  });
+  return Array.from({ length: count }, (_, i) => startPrice + step * i);
 }
 
 function isGpt5Family(model: string): boolean {
@@ -309,7 +305,7 @@ export const marketDataService = {
         if (!p.price || !p.name) return;
         const sparkline = Array.from({ length: 30 }, (_, i) => {
           const base = p.price! * (1 - (p.changePercent ?? 0) / 100 * (30 - i) / 30);
-          return base + (Math.random() - 0.5) * p.price! * 0.002;
+          return base;
         });
         results.push({
           ticker,

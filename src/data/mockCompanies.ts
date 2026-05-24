@@ -1,14 +1,11 @@
 import { Company } from '../models/types';
 
 const spark = (base: number, trend: 'up' | 'down' | 'flat' = 'up'): number[] => {
-  // Generate a sparkline that trends in the correct direction
+  // Simple linear sparkline — no randomness, will be replaced by live data
   const changePct = trend === 'up' ? 5 : trend === 'down' ? -4 : 0.5;
   const startPrice = base / (1 + changePct / 100);
   const step = (base - startPrice) / 30;
-  return Array.from({ length: 30 }, (_, i) => {
-    const trendVal = startPrice + step * i;
-    return trendVal + (Math.random() - 0.5) * base * 0.002;
-  });
+  return Array.from({ length: 30 }, (_, i) => startPrice + step * i);
 };
 
 type CD = [string, string, string, string, number, string, number, number, number, number, number, number,

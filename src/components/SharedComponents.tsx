@@ -186,12 +186,12 @@ export function MiniSparkline({ data, color = '#f97316', height = 32 }: { data: 
   const min = Math.min(...data);
   const max = Math.max(...data);
   const range = max - min || 1;
-  const w = 80;
-  const points = data.map((v, i) => `${(i / (data.length - 1)) * w},${height - ((v - min) / range) * (height - 4)}`).join(' ');
+  const vb = 200; // viewBox width for smooth scaling
+  const points = data.map((v, i) => `${(i / (data.length - 1)) * vb},${height - ((v - min) / range) * (height - 4)}`).join(' ');
 
   return (
-    <svg width={w} height={height} className="shrink-0">
-      <polyline points={points} fill="none" stroke={color} strokeWidth="1.5" strokeLinejoin="round" />
+    <svg viewBox={`0 0 ${vb} ${height}`} preserveAspectRatio="none" className="w-full shrink-0" style={{ height }}>
+      <polyline points={points} fill="none" stroke={color} strokeWidth="1.5" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
     </svg>
   );
 }
@@ -263,7 +263,7 @@ export function SectionHeader({ title, action, onAction }: { title: string; acti
   );
 }
 
-export const APP_VERSION = 'v1.3.0';
+export const APP_VERSION = 'v1.4.0';
 
 export function Disclaimer() {
   return (

@@ -1,13 +1,10 @@
 import { IndexData, SectorPerformance, MarketSentiment, MacroRisk } from '../models/types';
 
 const spark = (base: number, changePercent: number, count = 30): number[] => {
-  // Generate sparkline that trends in the correct direction
+  // Simple linear sparkline — no randomness
   const startPrice = base / (1 + changePercent / 100);
   const step = (base - startPrice) / count;
-  return Array.from({ length: count }, (_, i) => {
-    const trend = startPrice + step * i;
-    return trend + (Math.random() - 0.5) * base * 0.002;
-  });
+  return Array.from({ length: count }, (_, i) => startPrice + step * i);
 };
 
 export const mockIndexes: IndexData[] = [

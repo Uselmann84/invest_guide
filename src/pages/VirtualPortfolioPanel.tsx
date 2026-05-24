@@ -135,7 +135,7 @@ export default function VirtualPortfolioPanel() {
           const live = tickerToCompany.get(tk);
           let pts = await yahooFinance.getChart(tk, chartTf).catch(() => [] as Array<{ date: string; value: number }>);
           if (!pts || pts.length === 0) {
-            pts = historicalPriceService.getHistory(tk, chartTf, live?.price, live?.changePercent);
+            pts = historicalPriceService.getHistory(tk, chartTf);
           }
           map[tk] = pts.map(p => ({ date: p.date, price: p.value }));
         } catch {

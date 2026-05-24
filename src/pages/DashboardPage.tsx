@@ -4,6 +4,7 @@ import { IndexData, Company, Timeframe, PricePoint } from '../models/types';
 import { ChangeIndicator, MiniSparkline, SentimentGauge, SectionHeader, Disclaimer, TabBar } from '../components/SharedComponents';
 import { historicalPriceService } from '../services/historicalPriceService';
 import { CompanyDetail } from './StocksPage';
+import { useEdgeSwipeClose } from '../hooks/useEdgeSwipeClose';
 import { LineChart, Line, XAxis, YAxis, ResponsiveContainer, Tooltip, AreaChart, Area, CartesianGrid } from 'recharts';
 
 const perfTabs = [
@@ -28,15 +29,10 @@ function IndexDetail({ index, onClose }: { index: IndexData; onClose: () => void
   const [loading, setLoading] = useState(false);
   const [tilePerfs, setTilePerfs] = useState<Record<string, number | null>>({});
 
-  // Generate chart data from sparkline or fetch from Yahoo Finance
+  // Use live-fetched chart data only
   const chartData = useMemo(() => {
-    if (priceData.length > 0) return priceData;
-    // Fallback: generate from sparkline
-    return index.sparkline.map((v, i) => ({
-      date: `${i + 1}`,
-      value: v,
-    }));
-  }, [priceData, index.sparkline]);
+    return priceData;
+  }, [priceData]);
 
   // Fetch real chart data when timeframe changes
   React.useEffect(() => {
@@ -164,6 +160,95 @@ function IndexDetail({ index, onClose }: { index: IndexData; onClose: () => void
   );
 }
 
+function SectorPopup({ sector, sectorStocks, sectorChartsReady, onClose, openStock }: {
+  sector: { sector: string; subsectors: { name: string; change: number }[] };
+  sectorStocks: Company[];
+  sectorChartsReady: number;
+  onClose: () => void;
+  openStock: (c: Company) => void;
+}) {
+  const rootRef = useRef<HTMLDivElement>(null);
+  useEdgeSwipeClose(rootRef, onClose);
+
+  return (
+    <div ref={rootRef} className="fixed inset-0 z-50 bg-surface-950 overflow-y-auto" style={{ paddingTop: 'env(safe-area-inset-top, 16px)' }}>
+      <div className="max-w-lg mx-auto p-4 pb-24">
+        <button
+          onClick={onClose}
+          className="text-gray-400 hover:text-white text-sm mb-4 mt-1"
+        >
+          ← Back
+        </button>
+
+        <h2 className="text-lg font-bold mb-1">{sector.sector}</h2>
+        <p className="text-xs text-gray-500 mb-4">Top stocks by overall score</p>
+
+        {/* Subsector performance summary */}
+        <div className="card p-3 mb-4">
+          <p className="text-[11px] text-gray-400 font-medium mb-2">Subsectors</p>
+          <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
+            {sector.subsectors.map(sub => (
+              <div key={sub.name} className="flex items-center justify-between">
+                <span className="text-[11px] text-gray-300">{sub.name}</span>
+                <span className={`text-[11px] font-mono ${sub.change >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                  {sub.change >= 0 ? '+' : ''}{sub.change}%
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Stock list */}
+        <div className="space-y-2">
+          {sectorStocks.map((c, i) => (
+            <button
+              key={c.ticker}
+              onClick={() => openStock(c)}
+              className="card p-3 w-full text-left active:scale-[0.98] transition-all"
+            >
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-xl bg-accent-500/15 flex items-center justify-center text-[11px] font-bold text-accent-400 shrink-0">
+                  {i + 1}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between">
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold text-white truncate">{c.ticker}</p>
+                      <p className="text-[10px] text-gray-500 truncate">{c.name}</p>
+                    </div>
+                    <div className="text-right shrink-0 ml-2">
+                      <p className="text-sm font-medium">${c.price.toFixed(2)}</p>
+                      <ChangeIndicator value={c.changePercent} />
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3 mt-1.5">
+                    <span className="text-[10px] text-gray-500">{c.industry}</span>
+                    <span className="text-[10px] text-gray-600">•</span>
+                    <span className="text-[10px] text-gray-500">{c.marketCapLabel}</span>
+                    <span className="ml-auto text-[10px] text-accent-400 font-medium">Score {c.scores.overall}</span>
+                  </div>
+                </div>
+              </div>
+              <div className="mt-2">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-[10px] text-gray-500">1M</span>
+                  {(() => { const h = historicalPriceService.getHistory(c.ticker, '1M'); const pct = h.length >= 2 ? ((h[h.length-1].value - h[0].value) / h[0].value) * 100 : 0; return <span className={`text-[10px] font-mono ${pct >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{pct >= 0 ? '+' : ''}{pct.toFixed(1)}%</span>; })()}
+                </div>
+                <div className="h-12">
+                  {(() => { const h = historicalPriceService.getHistory(c.ticker, '1M'); const pct1m = h.length >= 2 ? ((h[h.length-1].value - h[0].value) / h[0].value) * 100 : 0; return <MiniSparkline data={h.map(p => p.value)} color={pct1m >= 0 ? '#10b981' : '#ef4444'} height={48} />; })()}
+                </div>
+              </div>
+            </button>
+          ))}
+          {sectorStocks.length === 0 && (
+            <p className="text-xs text-gray-500 text-center py-8">No stocks available for this sector</p>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function DashboardPage() {
   const { indexes, companies, sectors, sentiment, macroRisk, summary, heatmap, isLive, isLoading, aiStatus, aiGeneratedAt, dataSource, fetchIndexHistory, fetchHistory, runAiAnalysis, runDataSummary } = useMarketData();
   const [perfPeriod, setPerfPeriod] = useState<Timeframe>(() => (localStorage.getItem('dash_indexPeriod') as Timeframe) || '1M');
@@ -173,9 +258,10 @@ export default function DashboardPage() {
   const handleSetPerfPeriod = (t: Timeframe) => { setPerfPeriod(t); localStorage.setItem('dash_indexPeriod', t); };
   const handleSetStockPeriod = (t: Timeframe) => { setStockPeriod(t); localStorage.setItem('dash_stockPeriod', t); };
   const [selectedStock, setSelectedStock] = useState<Company | null>(null);
+  const [selectedSector, setSelectedSector] = useState<{ sector: string; subsectors: { name: string; change: number }[] } | null>(null);
 
   useEffect(() => {
-    const handler = (e: Event) => { if ((e as CustomEvent).detail === 'home') { setSelectedStock(null); setSelectedIndex(null); } };
+    const handler = (e: Event) => { if ((e as CustomEvent).detail === 'home') { setSelectedStock(null); setSelectedIndex(null); setSelectedSector(null); } };
     window.addEventListener('tab-reset', handler);
     return () => window.removeEventListener('tab-reset', handler);
   }, []);
@@ -228,6 +314,7 @@ export default function DashboardPage() {
         try {
           const data = await fetchHistory(stock.ticker, stockPeriod);
           if (!cancelled && data.length > 2) {
+            historicalPriceService.setHistory(stock.ticker, stockPeriod, data);
             setStockCharts(prev => ({ ...prev, [stock.ticker]: data }));
           }
         } catch { /* skip */ }
@@ -285,8 +372,49 @@ export default function DashboardPage() {
     });
   }, [companies]);
 
+  // Map heatmap sectors to company sectors/industries for the sector detail popup
+  const SECTOR_MAP: Record<string, string[]> = {
+    'Technology': ['Technology'],
+    'Healthcare': ['Healthcare'],
+    'Financials': ['Financials'],
+    'Energy': ['Energy', 'Utilities'],
+  };
+
+  const getSectorStocks = useCallback((sectorName: string) => {
+    const mappedSectors = SECTOR_MAP[sectorName] || [sectorName];
+    return [...companies]
+      .filter(c => mappedSectors.some(s => c.sector === s))
+      .sort((a, b) => b.scores.overall - a.scores.overall)
+      .slice(0, 10);
+  }, [companies]);
+
+  // Pre-fetch live 1M chart data for sector stocks
+  const [sectorChartsReady, setSectorChartsReady] = useState(0);
+  useEffect(() => {
+    if (!selectedSector) return;
+    let cancelled = false;
+    const stocks = getSectorStocks(selectedSector.sector);
+    stocks.forEach(async (c) => {
+      try {
+        const data = await fetchHistory(c.ticker, '1M');
+        if (!cancelled && data.length > 2) {
+          historicalPriceService.setHistory(c.ticker, '1M', data);
+          setSectorChartsReady(n => n + 1); // trigger re-render
+        }
+      } catch { /* skip */ }
+    });
+    return () => { cancelled = true; };
+  }, [selectedSector, getSectorStocks, fetchHistory]);
+
   if (selectedIndex) return <IndexDetail index={selectedIndex} onClose={closeIndex} />;
   if (selectedStock) return <CompanyDetail company={selectedStock} onClose={closeStock} />;
+
+  if (selectedSector) {
+    const sectorStocks = getSectorStocks(selectedSector.sector);
+    return (
+      <SectorPopup sector={selectedSector} sectorStocks={sectorStocks} sectorChartsReady={sectorChartsReady} onClose={() => setSelectedSector(null)} openStock={openStock} />
+    );
+  }
 
   return (
     <div className="space-y-4">
@@ -351,7 +479,7 @@ export default function DashboardPage() {
             const color = chartPerfValue >= 0 ? '#10b981' : '#ef4444';
             const miniData = chartData && chartData.length > 2
               ? chartData.map((p, i) => ({ i, v: p.value }))
-              : idx.sparkline.map((v, i) => ({ i, v }));
+              : [];
             return (
               <button
                 key={idx.symbol}
@@ -404,8 +532,15 @@ export default function DashboardPage() {
         <SectionHeader title="Sector Heatmap" />
         <div className="grid grid-cols-2 gap-2">
           {heatmap.map(sector => (
-            <div key={sector.sector} className="card-compact p-3">
-              <p className="text-xs font-medium text-gray-300 mb-2">{sector.sector}</p>
+            <button
+              key={sector.sector}
+              onClick={() => setSelectedSector(sector)}
+              className="card-compact p-3 text-left active:scale-[0.97] transition-all"
+            >
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-xs font-medium text-gray-300">{sector.sector}</p>
+                <span className="text-[10px] text-gray-500">▶</span>
+              </div>
               <div className="space-y-1">
                 {sector.subsectors.map(sub => (
                   <div key={sub.name} className="flex items-center justify-between">
@@ -416,7 +551,7 @@ export default function DashboardPage() {
                   </div>
                 ))}
               </div>
-            </div>
+            </button>
           ))}
         </div>
       </div>
@@ -446,43 +581,31 @@ export default function DashboardPage() {
       {/* Top Opportunities — Clickable */}
       <div>
         <SectionHeader title="Top Opportunities" />
-        <TabBar tabs={perfTabs} active={stockPeriod} onChange={(id) => handleSetStockPeriod(id as Timeframe)} />
-        <div className="mt-3 space-y-2">
-          {topStocks.map((c, i) => {
-            const chartData = stockCharts[c.ticker];
-            const chartPerf = chartData && chartData.length >= 2
-              ? ((chartData[chartData.length - 1].value - chartData[0].value) / chartData[0].value) * 100
-              : c.changePercent;
-            const sparkColor = chartPerf >= 0 ? '#10b981' : '#ef4444';
-            const miniPoints = chartData && chartData.length > 2
-              ? chartData.map(p => p.value)
-              : c.sparkline;
-            return (
-              <button
-                key={c.ticker}
-                onClick={() => openStock(c)}
-                className="card-compact p-3 flex items-center gap-3 w-full text-left active:scale-[0.98] transition-transform"
-              >
-                <div className="w-6 h-6 rounded-full bg-accent-500/20 flex items-center justify-center text-xs font-bold text-accent-400">
-                  {i + 1}
+        <div className="mt-2 space-y-2">
+          {topStocks.map((c, i) => (
+            <button
+              key={c.ticker}
+              onClick={() => openStock(c)}
+              className="card-compact p-3 flex items-center gap-3 w-full text-left active:scale-[0.98] transition-transform"
+            >
+              <div className="w-6 h-6 rounded-full bg-accent-500/20 flex items-center justify-center text-xs font-bold text-accent-400">
+                {i + 1}
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-semibold">{c.ticker}</span>
+                  <span className="text-xs text-gray-500 truncate">{c.name}</span>
                 </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-semibold">{c.ticker}</span>
-                    <span className="text-xs text-gray-500 truncate">{c.name}</span>
-                  </div>
-                  <div className="flex items-center gap-2 mt-0.5">
-                    <span className="text-xs font-mono">${c.price.toFixed(2)}</span>
-                    <span className="text-xs text-gray-600">•</span>
-                    <span className="text-xs text-gray-400">Score: {c.scores.overall}</span>
-                    <span className="text-xs text-gray-600">•</span>
-                    <ChangeIndicator value={chartPerf} />
-                  </div>
+                <div className="flex items-center gap-2 mt-0.5">
+                  <span className="text-xs font-mono">${c.price.toFixed(2)}</span>
+                  <span className="text-xs text-gray-600">•</span>
+                  <span className="text-xs text-gray-400">Score: {c.scores.overall}</span>
+                  <span className="text-xs text-gray-600">•</span>
+                  <ChangeIndicator value={c.changePercent} />
                 </div>
-                <MiniSparkline data={miniPoints} color={sparkColor} height={24} />
-              </button>
-            );
-          })}
+              </div>
+            </button>
+          ))}
         </div>
       </div>
 

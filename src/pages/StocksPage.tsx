@@ -96,7 +96,7 @@ export function CompanyDetail({ company: initialCompany, onClose, onWatchlistCha
   const [timeframe, setTimeframe] = useState<Timeframe>('1D');
   const [liveData, setLiveData] = useState<PricePoint[]>([]);
   const [loading, setLoading] = useState(false);
-  const fallbackData = useMemo(() => historicalPriceService.getHistory(company.ticker, timeframe, company.price, company.changePercent), [company.ticker, timeframe, company.price, company.changePercent]);
+  const fallbackData = useMemo(() => historicalPriceService.getHistory(company.ticker, timeframe), [company.ticker, timeframe]);
   const rawData = liveData.length > 0 ? liveData : fallbackData;
 
   // For 1D, prepend previous close so chart baseline matches daily change %
@@ -113,7 +113,12 @@ export function CompanyDetail({ company: initialCompany, onClose, onWatchlistCha
     setLoading(true);
     setLiveData([]);
     fetchHistory(company.ticker, timeframe)
-      .then(data => { if (!cancelled && data.length) setLiveData(data); })
+      .then(data => {
+        if (!cancelled && data.length) {
+          setLiveData(data);
+          historicalPriceService.setHistory(company.ticker, timeframe, data);
+        }
+      })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, [timeframe, fetchHistory, company.ticker]);
