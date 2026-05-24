@@ -1,4 +1,163 @@
-import React from 'react';
+import React, { useMemo } from 'react';
+
+// ---- Inline bold/italic renderer ----
+function renderInline(text: string): React.ReactNode[] {
+  return text.split(/(\*\*[^*]+\*\*)/g).map((part, j) =>
+    part.startsWith('**') && part.endsWith('**')
+      ? <strong key={j} className="text-white font-semibold">{part.slice(2, -2)}</strong>
+      : <span key={j}>{part}</span>
+  );
+}
+
+// ---- Clean AI response: strip confidence level section & trailing disclaimer ----
+function cleanAiResponse(text: string): string {
+  // Remove "## Confidence Level" section (heading + all lines until next ## or end)
+  let cleaned = text.replace(/## Confidence Level[:\s]*\w*\n(?:(?!## ).+\n?)*/gi, '');
+  // Remove trailing disclaimer line
+  cleaned = cleaned.replace(/⚠️[^\n]*not financial advice[^\n]*/gi, '');
+  // Remove leading "Not financial advice" boilerplate line
+  cleaned = cleaned.replace(/^Not financial advice[^\n]*\n*/i, '');
+  return cleaned.trim();
+}
+
+/** Full markdown renderer — handles ##, ###, tables, bullets, numbered lists, bold, hr */
+export function MarkdownContent({ text }: { text: string }) {
+  const elements = useMemo(() => {
+    const cleaned = cleanAiResponse(text);
+    const lines = cleaned.split('\n');
+    const result: React.ReactNode[] = [];
+    let i = 0;
+
+    while (i < lines.length) {
+      const line = lines[i];
+
+      // Horizontal rule
+      if (line.startsWith('---')) {
+        result.push(<hr key={i} className="border-white/10 my-3" />);
+        i++;
+        continue;
+      }
+
+      // ## Heading
+      if (line.startsWith('## ')) {
+        result.push(
+          <h2 key={i} className="text-base font-bold text-white mt-4 mb-1.5">{renderInline(line.slice(3))}</h2>
+        );
+        i++;
+        continue;
+      }
+
+      // ### Subheading
+      if (line.startsWith('### ')) {
+        result.push(
+          <h3 key={i} className="text-sm font-semibold text-gray-200 mt-3 mb-1">{renderInline(line.slice(4))}</h3>
+        );
+        i++;
+        continue;
+      }
+
+      // Table: collect all consecutive | lines, parse into a real table
+      if (line.startsWith('|')) {
+        const tableLines: string[] = [];
+        while (i < lines.length && lines[i].startsWith('|')) {
+          tableLines.push(lines[i]);
+          i++;
+        }
+        // Parse header + separator + body
+        if (tableLines.length >= 2) {
+          const parseRow = (row: string) => row.split('|').slice(1, -1).map(c => c.trim());
+          const headers = parseRow(tableLines[0]);
+          // Skip separator row (|---|---|)
+          const startIdx = tableLines[1].includes('---') ? 2 : 1;
+          const bodyRows = tableLines.slice(startIdx).map(parseRow);
+
+          result.push(
+            <div key={`table-${i}`} className="overflow-x-auto my-2 rounded-lg border border-white/10">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="bg-white/5">
+                    {headers.map((h, hi) => (
+                      <th key={hi} className="text-left px-2.5 py-2 text-gray-400 font-semibold whitespace-nowrap">{renderInline(h)}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {bodyRows.map((row, ri) => (
+                    <tr key={ri} className={ri % 2 === 0 ? '' : 'bg-white/[0.02]'}>
+                      {row.map((cell, ci) => (
+                        <td key={ci} className="px-2.5 py-2 text-gray-300 leading-relaxed">{renderInline(cell)}</td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          );
+        }
+        continue;
+      }
+
+      // Bullet list item (- or •)
+      if (line.match(/^\s*[-•]\s/)) {
+        const items: { indent: number; text: string }[] = [];
+        while (i < lines.length && lines[i].match(/^\s*[-•]\s/)) {
+          const match = lines[i].match(/^(\s*)[-•]\s(.*)/)!;
+          items.push({ indent: match[1].length, text: match[2] });
+          i++;
+        }
+        result.push(
+          <ul key={`ul-${i}`} className="space-y-1 my-1.5">
+            {items.map((item, li) => (
+              <li key={li} className="flex gap-2 text-sm text-gray-300 leading-relaxed" style={{ paddingLeft: item.indent > 0 ? '1rem' : 0 }}>
+                <span className="text-accent-500 mt-0.5 shrink-0">•</span>
+                <span>{renderInline(item.text)}</span>
+              </li>
+            ))}
+          </ul>
+        );
+        continue;
+      }
+
+      // Numbered list
+      if (line.match(/^\d+\.\s/)) {
+        const items: string[] = [];
+        while (i < lines.length && lines[i].match(/^\d+\.\s/)) {
+          items.push(lines[i].replace(/^\d+\.\s/, ''));
+          i++;
+        }
+        result.push(
+          <ol key={`ol-${i}`} className="space-y-1 my-1.5">
+            {items.map((item, li) => (
+              <li key={li} className="flex gap-2 text-sm text-gray-300 leading-relaxed">
+                <span className="text-accent-400 font-semibold shrink-0 w-5 text-right">{li + 1}.</span>
+                <span>{renderInline(item)}</span>
+              </li>
+            ))}
+          </ol>
+        );
+        continue;
+      }
+
+      // Empty line = spacer
+      if (line.trim() === '') {
+        i++;
+        continue;
+      }
+
+      // Regular paragraph
+      result.push(
+        <p key={i} className="text-sm text-gray-300 leading-relaxed">
+          {renderInline(line)}
+        </p>
+      );
+      i++;
+    }
+
+    return result;
+  }, [text]);
+
+  return <div className="space-y-0.5">{elements}</div>;
+}
 
 export function ScoreBar({ value, max = 100, color }: { value: number; max?: number; color?: string }) {
   const pct = Math.min(100, (value / max) * 100);
@@ -104,7 +263,7 @@ export function SectionHeader({ title, action, onAction }: { title: string; acti
   );
 }
 
-export const APP_VERSION = 'v1.2.2';
+export const APP_VERSION = 'v1.3.0';
 
 export function Disclaimer() {
   return (

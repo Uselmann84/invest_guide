@@ -167,19 +167,17 @@ export interface UserPreferences {
   excludedSectors: string[];
   preferredRegions: string[];
   companySize: string[];
-  maxPositionSize: number;
-  maxDrawdown: number;
   dividendPreference: 'None' | 'Low' | 'Moderate' | 'High';
   growthPreference: 'Low' | 'Moderate' | 'High' | 'Aggressive';
   aiTechPreference: 'Low' | 'Moderate' | 'High';
   esgPreference: boolean;
   currency: string;
-  startingCapital: number;
   scoreWeights: ScoreWeights;
   // Live mode + API configuration
   liveMode: boolean;
   openaiApiKey: string;
   openaiModel: string;
+  analysisModel: string;
   refreshIntervalSeconds: number; // 0 = manual only
   autoRefresh: boolean;
 }

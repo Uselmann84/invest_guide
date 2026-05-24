@@ -7,6 +7,8 @@ import { mockIndexes, mockSectors, mockSentiment, mockMacroRisk, mockMarketSumma
 import { mockCompanies } from '../data/mockCompanies';
 import { mockTrends } from '../data/mockTrends';
 import { useRefresh } from './RefreshContext';
+import { scoringEngine } from '../services/scoringEngine';
+import { userPreferenceService } from '../services/userPreferenceService';
 
 interface MarketDataContextValue {
   indexes: IndexData[];
@@ -157,7 +159,18 @@ export function MarketDataProvider({ children }: { children: React.ReactNode }) 
       const tickers = mockCompanies.map(c => c.ticker);
       const stockData = await marketDataService.fetchStockData(tickers);
       const updatedCompanies = marketDataService.getCompaniesWithLiveData(stockData);
-      setCompanies(updatedCompanies);
+      // Apply user's score weights to recalculate overall scores and user fit
+      const prefs = userPreferenceService.getPreferences();
+      const weights = prefs.scoreWeights;
+      const scored = updatedCompanies.map(c => ({
+        ...c,
+        scores: {
+          ...c.scores,
+          overall: scoringEngine.calculateOverallScore(c.scores, weights),
+          userFit: scoringEngine.calculateUserFitScore(c, prefs),
+        },
+      }));
+      setCompanies(scored);
 
       const gotRealStocks = Object.keys(stockData.companies).length > 0;
 

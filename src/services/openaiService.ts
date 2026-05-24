@@ -2,19 +2,23 @@
 // When liveMode is enabled and an API key is set, this sends prompts to OpenAI
 import { userPreferenceService } from './userPreferenceService';
 
-const SYSTEM_PROMPT = `You are an AI-powered investment research agent. You analyze stock markets, technology trends, institutional activity, and macroeconomic signals to provide research-based insights.
+const BASE_SYSTEM_PROMPT = `You are an AI-powered investment research agent. You analyze stock markets, technology trends, institutional activity, and macroeconomic signals to provide research-based insights.
 
 IMPORTANT RULES:
-1. Always state that your output is NOT financial advice
-2. Include a confidence level (High, Moderate, Low)
-3. Mention key risks
-4. Note that data may be delayed or estimated
-5. Be concise but thorough
-6. Use markdown formatting with bold headers and bullet points
-7. When comparing stocks, use tables
-8. Always end with the disclaimer: "⚠️ This is not financial advice. All outputs are research-based estimates and simulations."
+1. Your output is for educational and research purposes only
+2. Mention key risks naturally within your analysis
+3. Note that data may be delayed or estimated
+4. Be concise but thorough
+5. Use markdown formatting: ## for sections, ### for subsections, **bold** for emphasis, bullet points for lists
+6. When comparing stocks, use markdown tables with | column | headers |
+7. Write in a polished, direct style without meta-commentary about confidence levels
 
 You have access to general market knowledge up to your training cutoff. When asked about specific real-time prices, note that you're providing estimates based on recent data.`;
+
+function getSystemPrompt(): string {
+  const profile = userPreferenceService.getInvestorProfileContext();
+  return `${BASE_SYSTEM_PROMPT}\n\nINVESTOR PROFILE:\n${profile}\nTailor all analysis, recommendations, and risk assessments to this investor's profile. Prioritize their preferred sectors, regions, and company sizes. Respect their risk tolerance and investment horizon when suggesting opportunities.`;
+}
 
 export const openaiService = {
   isConfigured(): boolean {
@@ -30,10 +34,19 @@ export const openaiService = {
     if (!apiKey.startsWith('sk-')) throw new Error('Invalid API key format. OpenAI keys start with "sk-".');
 
     const messages = [
-      { role: 'system', content: SYSTEM_PROMPT },
+      { role: 'system', content: getSystemPrompt() },
       ...conversationHistory.slice(-10).map(m => ({ role: m.role, content: m.content })),
       { role: 'user', content: userMessage },
     ];
+
+    const model = prefs.openaiModel || 'gpt-4.1-mini';
+    const isGpt5 = model.startsWith('gpt-5') || model.startsWith('o3') || model.startsWith('o4');
+    const body: Record<string, unknown> = {
+      model,
+      messages,
+      max_completion_tokens: 2048,
+    };
+    if (!isGpt5) body.temperature = 0.7;
 
     const res = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
@@ -41,12 +54,7 @@ export const openaiService = {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${apiKey}`,
       },
-      body: JSON.stringify({
-        model: prefs.openaiModel || 'gpt-4o-mini',
-        messages,
-        temperature: 0.7,
-        max_tokens: 2048,
-      }),
+      body: JSON.stringify(body),
     });
 
     if (!res.ok) {

@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useRef, useCallback, useEffect } from 'react';
 import { institutionShortNames, institutionColors, TradeFlowEntry, StockFlowEntry } from '../data/tradeFlowHistory';
 import { getInstitutionalData, getMockInstitutionalData, InstitutionalData } from '../services/institutionalDataService';
-import { SectionHeader, TabBar, ChangeIndicator, Disclaimer } from '../components/SharedComponents';
+import { SectionHeader, TabBar, ChangeIndicator, Disclaimer, MarkdownContent } from '../components/SharedComponents';
 import { Institution, Company } from '../models/types';
 import { useMarketData } from '../components/MarketDataContext';
 import { CompanyDetail } from './StocksPage';
@@ -233,23 +233,6 @@ function InstitutionDetail({ inst, onClose, onTickerClick }: { inst: Institution
     }
   }, [inst.id, inst.name, inst.type, inst.aum, inst.topHoldings]);
 
-  const renderAskMarkdown = (text: string) => text.split('\n').map((line, i) => {
-    if (line.startsWith('---')) return <hr key={i} className="border-white/10 my-2" />;
-    if (line.startsWith('**') && line.endsWith('**')) {
-      return <p key={i} className="font-semibold text-white mt-3">{line.replace(/\*\*/g, '')}</p>;
-    }
-    const parts = line.split(/(\*\*[^*]+\*\*)/g);
-    return (
-      <p key={i} className="text-sm text-gray-300 leading-relaxed">
-        {parts.map((part, j) =>
-          part.startsWith('**') && part.endsWith('**')
-            ? <strong key={j} className="text-white">{part.replace(/\*\*/g, '')}</strong>
-            : <React.Fragment key={j}>{part}</React.Fragment>
-        )}
-      </p>
-    );
-  });
-
   return (
     <div ref={rootRef} className="fixed inset-0 z-50 bg-surface-950/95 overflow-y-auto">
       <div className="max-w-lg mx-auto p-4 pt-[env(safe-area-inset-top,16px)] pb-24">
@@ -404,7 +387,7 @@ function InstitutionDetail({ inst, onClose, onTickerClick }: { inst: Institution
                   <span className="ml-2">Asking the agent…</span>
                 </div>
               ) : (
-                <div className="space-y-1">{renderAskMarkdown(askContent)}</div>
+                <MarkdownContent text={askContent} />
               )}
             </div>
           </div>

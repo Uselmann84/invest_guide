@@ -205,6 +205,116 @@ function AddRsuForm({ onAdd, onCancel }: { onAdd: (g: RsuGrant) => void; onCance
 }
 
 // ---- Tax Settings Form ----
+
+// ---- Edit Stock Form ----
+function EditStockForm({ holding, onSave, onCancel }: { holding: StockHolding; onSave: (h: StockHolding) => void; onCancel: () => void }) {
+  const [shares, setShares] = useState(String(holding.shares));
+  const [buyPrice, setBuyPrice] = useState(String(holding.buyPrice));
+  const [buyDate, setBuyDate] = useState(holding.buyDate);
+
+  const submit = () => {
+    if (!shares || !buyPrice) return;
+    onSave({ ...holding, shares: Number(shares), buyPrice: Number(buyPrice), buyDate });
+  };
+
+  return (
+    <div className="card overflow-hidden">
+      <div className="bg-gradient-to-r from-blue-500/20 to-accent-500/10 px-4 py-3 border-b border-white/5">
+        <h3 className="text-sm font-semibold">✏️ Edit {holding.ticker} — {holding.name}</h3>
+      </div>
+      <div className="p-4 space-y-3">
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="text-[10px] text-gray-500 block mb-1">Shares</label>
+            <input className="input-field text-sm" type="number" value={shares} onChange={e => setShares(e.target.value)} />
+          </div>
+          <div>
+            <label className="text-[10px] text-gray-500 block mb-1">Buy Price ($)</label>
+            <input className="input-field text-sm" type="number" step="0.01" value={buyPrice} onChange={e => setBuyPrice(e.target.value)} />
+          </div>
+        </div>
+        <div>
+          <label className="text-[10px] text-gray-500 block mb-1">Buy Date</label>
+          <input className="input-field text-sm" type="date" value={buyDate} onChange={e => setBuyDate(e.target.value)} />
+        </div>
+        <div className="flex gap-2 pt-1">
+          <button onClick={submit} disabled={!shares || !buyPrice} className="btn-primary flex-1 text-sm py-2.5 disabled:opacity-40">Save</button>
+          <button onClick={onCancel} className="btn-secondary flex-1 text-sm py-2.5">Cancel</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ---- Edit RSU Form ----
+function EditRsuForm({ grant, onSave, onCancel }: { grant: RsuGrant; onSave: (g: RsuGrant) => void; onCancel: () => void }) {
+  const [totalShares, setTotalShares] = useState(String(grant.totalShares));
+  const [grantDate, setGrantDate] = useState(grant.grantDate);
+  const [grantPrice, setGrantPrice] = useState(String(grant.grantPrice));
+  const [vestingYears, setVestingYears] = useState(String(grant.vestingYears));
+  const [vestFreq, setVestFreq] = useState<'3' | '6'>(String(grant.vestingFrequencyMonths) as '3' | '6');
+  const [cliffPeriods, setCliffPeriods] = useState(String(grant.cliffPeriods));
+
+  const submit = () => {
+    if (!totalShares || !grantPrice) return;
+    onSave({
+      ...grant,
+      totalShares: Number(totalShares),
+      grantDate,
+      grantPrice: Number(grantPrice),
+      vestingYears: Number(vestingYears),
+      vestingFrequencyMonths: Number(vestFreq) as 3 | 6,
+      cliffPeriods: Number(cliffPeriods),
+    });
+  };
+
+  return (
+    <div className="card overflow-hidden">
+      <div className="bg-gradient-to-r from-violet-500/20 to-accent-500/10 px-4 py-3 border-b border-white/5">
+        <h3 className="text-sm font-semibold">✏️ Edit {grant.ticker} RSU Grant</h3>
+      </div>
+      <div className="p-4 space-y-3">
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="text-[10px] text-gray-500 block mb-1">Total Shares</label>
+            <input className="input-field text-sm" type="number" value={totalShares} onChange={e => setTotalShares(e.target.value)} />
+          </div>
+          <div>
+            <label className="text-[10px] text-gray-500 block mb-1">Grant Price ($)</label>
+            <input className="input-field text-sm" type="number" step="0.01" value={grantPrice} onChange={e => setGrantPrice(e.target.value)} />
+          </div>
+        </div>
+        <div>
+          <label className="text-[10px] text-gray-500 block mb-1">Grant Date</label>
+          <input className="input-field text-sm" type="date" value={grantDate} onChange={e => setGrantDate(e.target.value)} />
+        </div>
+        <div className="grid grid-cols-3 gap-3">
+          <div>
+            <label className="text-[10px] text-gray-500 block mb-1">Vesting (years)</label>
+            <input className="input-field text-sm" type="number" value={vestingYears} onChange={e => setVestingYears(e.target.value)} />
+          </div>
+          <div>
+            <label className="text-[10px] text-gray-500 block mb-1">Freq (months)</label>
+            <select className="input-field text-sm" value={vestFreq} onChange={e => setVestFreq(e.target.value as '3' | '6')}>
+              <option value="3">Every 3mo</option>
+              <option value="6">Every 6mo</option>
+            </select>
+          </div>
+          <div>
+            <label className="text-[10px] text-gray-500 block mb-1">Cliff periods</label>
+            <input className="input-field text-sm" type="number" value={cliffPeriods} onChange={e => setCliffPeriods(e.target.value)} />
+          </div>
+        </div>
+        <div className="flex gap-2 pt-1">
+          <button onClick={submit} disabled={!totalShares || !grantPrice} className="btn-primary flex-1 text-sm py-2.5 disabled:opacity-40">Save</button>
+          <button onClick={onCancel} className="btn-secondary flex-1 text-sm py-2.5">Cancel</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ---- Tax Settings Form ----
 function TaxSettingsForm({ tax, onChange }: { tax: TaxSettings; onChange: (t: TaxSettings) => void }) {
   const update = (k: keyof TaxSettings, v: number) => {
     const next = { ...tax, [k]: v };
@@ -351,6 +461,8 @@ export default function PortfolioPage() {
   const [tax, setTax] = useState<TaxSettings>(() => portfolioService.getTaxSettings());
   const [showAddStock, setShowAddStock] = useState(false);
   const [showAddRsu, setShowAddRsu] = useState(false);
+  const [editingStock, setEditingStock] = useState<StockHolding | null>(null);
+  const [editingRsu, setEditingRsu] = useState<RsuGrant | null>(null);
   const [selectedRsu, setSelectedRsu] = useState<RsuGrant | null>(null);
   const [selectedCompany, setSelectedCompany] = useState<Company | null>(null);
   const scrollPosRef = useRef(0);
@@ -394,6 +506,18 @@ export default function PortfolioPage() {
   const removeRsu = (id: string) => {
     portfolioService.removeRsuGrant(id);
     setRsus(portfolioService.getRsuGrants());
+  };
+
+  const saveEditedStock = (h: StockHolding) => {
+    portfolioService.updateHolding(h);
+    setHoldings(portfolioService.getHoldings());
+    setEditingStock(null);
+  };
+
+  const saveEditedRsu = (g: RsuGrant) => {
+    portfolioService.updateRsuGrant(g);
+    setRsus(portfolioService.getRsuGrants());
+    setEditingRsu(null);
   };
 
   // Compute portfolio totals
@@ -841,6 +965,9 @@ export default function PortfolioPage() {
           )}
 
           {holdings.map(h => {
+            if (editingStock?.id === h.id) {
+              return <EditStockForm key={h.id} holding={h} onSave={saveEditedStock} onCancel={() => setEditingStock(null)} />;
+            }
             const co = getCompany(h.ticker);
             const price = co?.price ?? 0;
             const currentVal = price * h.shares;
@@ -859,7 +986,10 @@ export default function PortfolioPage() {
                     <span className="text-sm font-bold text-accent-400">{h.ticker}</span>
                     <span className="text-xs text-gray-500 ml-2">{h.name}</span>
                   </button>
-                  <button onClick={() => removeHolding(h.id)} className="text-[10px] text-red-400/60 hover:text-red-400">Remove</button>
+                  <div className="flex items-center gap-2">
+                    <button onClick={() => setEditingStock(h)} className="text-[10px] text-blue-400/60 hover:text-blue-400">Edit</button>
+                    <button onClick={() => removeHolding(h.id)} className="text-[10px] text-red-400/60 hover:text-red-400">Remove</button>
+                  </div>
                 </div>
                 <div className="grid grid-cols-4 gap-2 text-center">
                   <div>
@@ -914,6 +1044,9 @@ export default function PortfolioPage() {
           )}
 
           {rsus.map(g => {
+            if (editingRsu?.id === g.id) {
+              return <EditRsuForm key={g.id} grant={g} onSave={saveEditedRsu} onCancel={() => setEditingRsu(null)} />;
+            }
             const co = getCompany(g.ticker);
             const price = co?.price ?? 0;
             const vested = portfolioService.getVestedShares(g);
@@ -934,8 +1067,12 @@ export default function PortfolioPage() {
                     <span className="text-sm font-bold text-accent-400">{g.ticker}</span>
                     <span className="text-xs text-gray-500 ml-2">{g.name}</span>
                   </div>
-                  <button onClick={(e) => { e.stopPropagation(); removeRsu(g.id); }}
-                    className="text-[10px] text-red-400/60 hover:text-red-400">Remove</button>
+                  <div className="flex items-center gap-2">
+                    <button onClick={(e) => { e.stopPropagation(); setEditingRsu(g); }}
+                      className="text-[10px] text-blue-400/60 hover:text-blue-400">Edit</button>
+                    <button onClick={(e) => { e.stopPropagation(); removeRsu(g.id); }}
+                      className="text-[10px] text-red-400/60 hover:text-red-400">Remove</button>
+                  </div>
                 </div>
                 <div className="grid grid-cols-4 gap-2 text-center mb-2">
                   <div>

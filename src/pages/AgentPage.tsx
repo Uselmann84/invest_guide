@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { aiAgentService } from '../services/aiAgentService';
 import { conversationService } from '../services/conversationService';
 import { ChatMessage, Conversation } from '../models/types';
-import { LoadingPulse } from '../components/SharedComponents';
+import { LoadingPulse, MarkdownContent } from '../components/SharedComponents';
 
 export default function AgentPage() {
   const [conversationId, setConversationId] = useState<string>(() => {
@@ -86,28 +86,6 @@ export default function AgentPage() {
       if (list.length > 0) loadConversation(list[0].id);
       else newConversation();
     }
-  };
-
-  const renderMarkdown = (text: string) => {
-    return text.split('\n').map((line, i) => {
-      if (line.startsWith('---')) return <hr key={i} className="border-white/10 my-2" />;
-      if (line.startsWith('**') && line.endsWith('**')) {
-        return <p key={i} className="font-semibold text-white">{line.replace(/\*\*/g, '')}</p>;
-      }
-      if (line.startsWith('| ')) {
-        return <p key={i} className="text-xs font-mono text-gray-400">{line}</p>;
-      }
-      const parts = line.split(/(\*\*[^*]+\*\*)/g);
-      return (
-        <p key={i} className="text-sm text-gray-300 leading-relaxed">
-          {parts.map((part, j) =>
-            part.startsWith('**') && part.endsWith('**')
-              ? <strong key={j} className="text-white font-semibold">{part.slice(2, -2)}</strong>
-              : <span key={j}>{part}</span>
-          )}
-        </p>
-      );
-    });
   };
 
   return (
@@ -218,7 +196,7 @@ export default function AgentPage() {
               {msg.role === 'user' ? (
                 <p className="text-sm">{msg.content}</p>
               ) : (
-                <div className="space-y-1">{renderMarkdown(msg.content)}</div>
+                <MarkdownContent text={msg.content} />
               )}
               <p className="text-[10px] mt-2 opacity-50">
                 {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}

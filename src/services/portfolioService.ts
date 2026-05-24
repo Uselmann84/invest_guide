@@ -34,6 +34,9 @@ export const portfolioService = {
   removeHolding(id: string) {
     this.saveHoldings(this.getHoldings().filter(h => h.id !== id));
   },
+  updateHolding(updated: StockHolding) {
+    this.saveHoldings(this.getHoldings().map(h => h.id === updated.id ? updated : h));
+  },
 
   // ---- RSUs ----
   getRsuGrants(): RsuGrant[] { return load<RsuGrant[]>(RSU_KEY, []); },
@@ -45,6 +48,9 @@ export const portfolioService = {
   },
   removeRsuGrant(id: string) {
     this.saveRsuGrants(this.getRsuGrants().filter(g => g.id !== id));
+  },
+  updateRsuGrant(updated: RsuGrant) {
+    this.saveRsuGrants(this.getRsuGrants().map(g => g.id === updated.id ? updated : g));
   },
 
   // ---- Tax ----

@@ -46,6 +46,33 @@ export const scoringEngine = {
     // Tech preference
     if (prefs.aiTechPreference === 'High' && company.scores.technologyExposure > 70) score += 10;
 
+    // Growth preference — boost high-growth companies for aggressive growth investors
+    const growthMap = { Low: 0, Moderate: 5, High: 10, Aggressive: 15 };
+    if (company.revenueGrowth > 20) score += growthMap[prefs.growthPreference] || 0;
+    if (prefs.growthPreference === 'Low' && company.revenueGrowth > 40) score -= 5;
+
+    // Dividend preference — boost companies with strong dividends
+    const divMap = { None: -5, Low: 0, Moderate: 5, High: 10 };
+    if (company.scores.marketDemand > 60) score += divMap[prefs.dividendPreference] || 0;
+
+    // Company size — boost matching market cap tiers
+    if (prefs.companySize.length > 0) {
+      const capLabel = company.marketCapLabel;
+      const isLarge = company.marketCap >= 10e9;
+      const isMid = company.marketCap >= 2e9 && company.marketCap < 10e9;
+      const isSmall = company.marketCap >= 300e6 && company.marketCap < 2e9;
+      const isMicro = company.marketCap < 300e6;
+      const match = (prefs.companySize.includes('Large cap') && isLarge) ||
+                    (prefs.companySize.includes('Mid cap') && isMid) ||
+                    (prefs.companySize.includes('Small cap') && isSmall) ||
+                    (prefs.companySize.includes('Micro cap') && isMicro);
+      if (match) score += 8;
+      else if (prefs.companySize.length <= 2) score -= 5; // penalize non-matching sizes when user is specific
+    }
+
+    // ESG preference
+    if (prefs.esgPreference && company.scores.fundamental > 60) score += 5;
+
     return Math.min(100, Math.max(0, score));
   },
 

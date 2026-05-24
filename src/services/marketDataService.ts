@@ -63,6 +63,22 @@ function generateSparkline(base: number, count: number, changePercent = 0): numb
   });
 }
 
+function isGpt5Family(model: string): boolean {
+  return model.startsWith('gpt-5') || model.startsWith('o3') || model.startsWith('o4');
+}
+
+function buildRequestBody(model: string, messages: { role: string; content: string }[], maxTokens: number, temperature?: number): Record<string, unknown> {
+  const body: Record<string, unknown> = { model, messages };
+  if (isGpt5Family(model)) {
+    body.max_completion_tokens = maxTokens;
+    // GPT-5.5 uses reasoning_effort instead of temperature
+  } else {
+    body.max_completion_tokens = maxTokens;
+    if (temperature !== undefined) body.temperature = temperature;
+  }
+  return body;
+}
+
 async function callOpenAI(prompt: string): Promise<string> {
   const prefs = userPreferenceService.getPreferences();
   if (!prefs.openaiApiKey) throw new Error('No API key configured. Go to Settings → Live Mode & API to add your OpenAI key.');
@@ -70,21 +86,17 @@ async function callOpenAI(prompt: string): Promise<string> {
   const apiKey = prefs.openaiApiKey.trim();
   if (!apiKey.startsWith('sk-')) throw new Error('Invalid API key format. OpenAI keys start with "sk-".');
 
+  const model = prefs.analysisModel || prefs.openaiModel || 'gpt-4.1-nano';
   const res = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${apiKey}`,
     },
-    body: JSON.stringify({
-      model: prefs.openaiModel || 'gpt-4o-mini',
-      messages: [
-        { role: 'system', content: 'You are a financial analyst AI. Return ONLY valid JSON. The summary field must be a single JSON string with \\n for newlines. Do NOT use actual newlines inside JSON string values. No markdown code fences. No text outside the JSON object.' },
-        { role: 'user', content: prompt },
-      ],
-      temperature: 0.4,
-      max_tokens: 4096,
-    }),
+    body: JSON.stringify(buildRequestBody(model, [
+      { role: 'system', content: 'You are a financial analyst AI. Return ONLY valid JSON. The summary field must be a single JSON string with \\n for newlines. Do NOT use actual newlines inside JSON string values. No markdown code fences. No text outside the JSON object.' },
+      { role: 'user', content: prompt },
+    ], 4096, 0.4)),
   });
 
   if (!res.ok) {
@@ -360,7 +372,13 @@ export const marketDataService = {
       const sectorSummary = sectors.map(s => `${s.name}: ${s.change >= 0 ? '+' : ''}${s.change.toFixed(1)}%`).join(', ');
       const stockSummary = topStocks.slice(0, 20).map(s => `${s.ticker}: $${s.price.toFixed(2)} (${s.change >= 0 ? '+' : ''}${s.change.toFixed(2)}%)`).join(', ');
 
+      const investorProfile = userPreferenceService.getInvestorProfileContext();
+
       const json = await callOpenAI(`You are a senior Wall Street market strategist writing a daily market brief for sophisticated retail investors. Analyze the REAL current market data below and provide a comprehensive analysis with actionable investment ideas.
+
+INVESTOR PROFILE:
+${investorProfile}
+Tailor your analysis, opportunity suggestions, and positioning advice to this investor's preferences, risk tolerance, and horizon. Prioritize sectors and company sizes they prefer. Flag opportunities or risks relevant to their excluded sectors.
 
 CURRENT MARKET DATA (${new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}):
 
@@ -514,8 +532,12 @@ CRITICAL: The summary value must be a valid JSON string. Use \\n for newlines, N
 
     const prefs = userPreferenceService.getPreferences();
     const trendNames = currentTrends.map(t => `${t.name} (${t.icon})`).join(', ');
+    const investorProfile = userPreferenceService.getInvestorProfileContext();
 
     const prompt = `Update scores for these tech trends based on current market: ${trendNames}.
+
+INVESTOR PROFILE: ${investorProfile}
+Weight scores toward trends relevant to this investor's sector preferences and risk tolerance.
 
 For each, return: id, scores (0-100: momentumScore, marketDemandScore, investmentAttentionScore, publicHypeScore, realRevenueImpactScore), keyCompanies (5 US stock tickers), emergingCompanies (3 US stock tickers), risks (3 short items), description (1 sentence).
 

@@ -143,24 +143,6 @@ export default function SettingsPage() {
         </div>
       </div>
 
-      {/* Limits */}
-      <div className="card p-4">
-        <SectionHeader title="Risk Limits" />
-        <div className="space-y-4">
-          <Slider label="Max Position Size" value={prefs.maxPositionSize} min={1} max={50} step={1} suffix="%" onChange={v => update('maxPositionSize', v)} />
-          <Slider label="Max Portfolio Drawdown" value={prefs.maxDrawdown} min={5} max={60} step={5} suffix="%" onChange={v => update('maxDrawdown', v)} />
-          <div>
-            <label className="text-xs text-gray-400 block mb-1">Starting Capital (Simulation)</label>
-            <input
-              type="number"
-              value={prefs.startingCapital}
-              onChange={e => update('startingCapital', Number(e.target.value))}
-              className="input-field text-sm"
-            />
-          </div>
-        </div>
-      </div>
-
       {/* Score Weights */}
       <div className="card p-4">
         <SectionHeader title="AI Score Weights" />
@@ -213,14 +195,22 @@ export default function SettingsPage() {
 
         {/* Model Select */}
         <div className="mb-3">
-          <Select label="Model" value={prefs.openaiModel}
-            options={['gpt-4o-mini', 'gpt-4o', 'gpt-4-turbo', 'gpt-3.5-turbo']}
+          <Select label="Chat Model (Ask Agent)" value={prefs.openaiModel}
+            options={['gpt-4.1-nano', 'gpt-4.1-mini', 'gpt-4o-mini', 'gpt-4o', 'gpt-5.4-nano', 'gpt-5.4-mini', 'gpt-5.5']}
             onChange={v => update('openaiModel', v)} />
+          <p className="text-[10px] text-gray-600 mt-1">Used for Ask Agent conversations. Higher models = better quality, higher cost.</p>
+        </div>
+
+        <div className="mb-3">
+          <Select label="Analysis Model (Market Brief & Trends)" value={prefs.analysisModel}
+            options={['gpt-4.1-nano', 'gpt-4.1-mini', 'gpt-4o-mini', 'gpt-5.4-nano', 'gpt-5.4-mini', 'gpt-5.5']}
+            onChange={v => update('analysisModel', v)} />
+          <p className="text-[10px] text-gray-600 mt-1">Used for background JSON tasks (market analysis, trends). Nano models are ~20x cheaper.</p>
         </div>
 
         {prefs.openaiApiKey ? (
           <div className="mt-2 p-2 rounded-lg bg-emerald-500/10 text-emerald-400 text-xs">
-            ✓ AI enabled — Tap 🤖 AI on the Dashboard to generate analysis ({prefs.openaiModel})
+            ✓ AI enabled — Chat: {prefs.openaiModel} · Analysis: {prefs.analysisModel}
           </div>
         ) : (
           <div className="mt-2 p-2 rounded-lg bg-white/5 text-gray-500 text-xs">

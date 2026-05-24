@@ -10,14 +10,11 @@ const DEFAULT_PREFERENCES: UserPreferences = {
   excludedSectors: [],
   preferredRegions: ['USA', 'Global'],
   companySize: ['Large cap', 'Mid cap'],
-  maxPositionSize: 15,
-  maxDrawdown: 25,
   dividendPreference: 'Low',
   growthPreference: 'High',
   aiTechPreference: 'High',
   esgPreference: false,
   currency: 'USD',
-  startingCapital: 100000,
   scoreWeights: {
     growth: 15,
     safety: 10,
@@ -31,7 +28,8 @@ const DEFAULT_PREFERENCES: UserPreferences = {
   },
   liveMode: false,
   openaiApiKey: '',
-  openaiModel: 'gpt-4o-mini',
+  openaiModel: 'gpt-4.1-mini',
+  analysisModel: 'gpt-4.1-nano',
   refreshIntervalSeconds: 60,
   autoRefresh: false,
 };
@@ -59,5 +57,24 @@ export const userPreferenceService = {
 
   getDefaultPreferences(): UserPreferences {
     return { ...DEFAULT_PREFERENCES };
+  },
+
+  /** Build a concise investor profile string for AI prompt injection */
+  getInvestorProfileContext(): string {
+    const p = this.getPreferences();
+    const parts: string[] = [
+      `Risk tolerance: ${p.riskTolerance}`,
+      `Investment horizon: ${p.investmentHorizon}`,
+      `Growth preference: ${p.growthPreference}`,
+      `Dividend preference: ${p.dividendPreference}`,
+      `AI/Tech preference: ${p.aiTechPreference}`,
+    ];
+    if (p.preferredSectors.length) parts.push(`Preferred sectors: ${p.preferredSectors.join(', ')}`);
+    if (p.excludedSectors.length) parts.push(`Excluded sectors: ${p.excludedSectors.join(', ')}`);
+    if (p.preferredRegions.length) parts.push(`Preferred regions: ${p.preferredRegions.join(', ')}`);
+    if (p.companySize.length) parts.push(`Company size: ${p.companySize.join(', ')}`);
+    if (p.esgPreference) parts.push('ESG: prioritized');
+    if (p.currency !== 'USD') parts.push(`Currency: ${p.currency}`);
+    return parts.join('. ') + '.';
   },
 };
